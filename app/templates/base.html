@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Split Screen App</title>
+    <link rel="icon" type="image/png" href="{% static 'images/argos-favicon-dark.png' %}">
+    <link rel="icon" type="image/png" href="{% static 'images/argos-logo-dark.png' %}">
+    {% if debug %}
+    <script type="module" src="http://localhost:5173/@vite/client"></script>
+    <script type="module" src="http://localhost:5173/src/main.js"></script>
+    {% else %}
+    <script type="module" src="{% static 'dist/main.js' %}"></script>
+    {% endif %}
+
+        .result-section, .chat-section {
+            flex: 1;
+            padding: 2rem;
+            overflow-y: auto;
+        }
+
+        .result-section {
+            border-right: 1px solid var(--border-color);
+        }
+    </style>
+</head>
+<body>
+    <header class="bg-gray-800 text-white px-8 py-4 flex items-center gap-4 shadow-md">
+        <img src="{% static 'images/argos-logo-dark.png' %}" alt="Logo" class="h-8 w-auto">
+        <h1 class="text-xl font-semibold">Split Screen Application</h1>
+    </header>
+    
+    <div class="flex h-[calc(100vh-4rem)]">
+        <section class="flex-1 p-8 border-r border-gray-200">
+            {% block result_content %}
+            {% endblock %}
+        </section>
+        <section class="flex-1 p-8">
+            {% block chat_content %}
+            {% endblock %}
+        </section>
+    </div>
+</body>
+</html>
