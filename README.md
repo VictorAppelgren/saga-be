@@ -1,30 +1,26 @@
 # Split Screen Application
 
-A Django application featuring a split-screen interface with a result display and chat interface. The application uses modern frontend tooling with Vite and Tailwind CSS.
+A Django application featuring a split-screen interface with a result display and chat interface. The application uses modern frontend tooling with Tailwind CSS.
 
 ## Project Structure
 
 ```
 application/
-├── app/
-│   ├── frontend/           # Frontend assets and configuration
-│   │   ├── src/
-│   │   │   ├── css/
-│   │   │   │   └── main.css    # Tailwind CSS imports
-│   │   │   └── main.js         # JavaScript entry point
-│   │   ├── vite.config.js      # Vite configuration
-│   │   ├── tailwind.config.js  # Tailwind configuration
-│   │   ├── postcss.config.js   # PostCSS configuration
-│   │   └── package.json        # NPM dependencies
-│   ├── templates/         # Django templates
-│   │   ├── base.html     # Base template with split-screen layout
-│   │   └── home.html     # Home page template
-│   ├── static/           # Static files
-│   │   └── images/       # Image assets
-│   └── app/             # Django project configuration
-│       ├── settings.py   # Django settings
-│       ├── urls.py       # URL configuration
-│       └── views.py      # View functions
+├── static/
+│   ├── src/
+│   │   └── main.css      # Tailwind CSS source
+│   └── dist/
+│       └── main.css      # Compiled CSS output
+├── templates/            # Django templates
+│   ├── base.html         # Base template with split-screen layout
+│   └── home.html         # Home page template
+├── app/                  # Django project configuration
+│   ├── settings.py       # Django settings
+│   ├── urls.py           # URL configuration
+│   └── views.py          # View functions
+├── package.json          # NPM dependencies
+├── tailwind.config.js    # Tailwind configuration
+└── postcss.config.js     # PostCSS configuration
 ```
 
 ## Prerequisites
@@ -32,7 +28,6 @@ application/
 - Python 3.x
 - Node.js and npm
 - Django
-- Vite
 - Tailwind CSS
 
 ## Installation
@@ -43,33 +38,26 @@ application/
    cd application
    ```
 
-2. Install Python dependencies using Pipenv:
+2. Install Python dependencies:
    ```bash
-   cd app
-   pipenv install
-   pipenv shell  # Activate the virtual environment
+   pip install -r requirements.txt
    ```
 
 3. Install frontend dependencies:
    ```bash
-   cd frontend
    npm install
    ```
 
 ## Running the Application
 
-The application requires running both the Django backend server and the Vite development server.
-
-1. Start the Vite development server:
+1. Start the Tailwind CSS watcher:
    ```bash
-   cd app/frontend
-   npm run dev
+   npm run watch
    ```
-   This will start the Vite server on http://localhost:5173
+   This will watch for changes in your CSS and compile them automatically
 
 2. In a separate terminal, start the Django development server:
    ```bash
-   cd app
    python manage.py runserver
    ```
    This will start the Django server on http://localhost:8000
@@ -79,11 +67,10 @@ The application requires running both the Django backend server and the Vite dev
 ## Development
 
 ### Frontend Development
-- The frontend code is located in the `app/frontend` directory
-- Vite handles JavaScript bundling and provides hot module replacement
 - Tailwind CSS is used for styling
-- Edit `src/main.js` for JavaScript changes
-- Edit `src/css/main.css` for custom CSS (Tailwind is already imported)
+- Edit `static/src/main.css` for custom CSS
+- The CSS is automatically compiled to `static/dist/main.css`
+- Tailwind's utility classes can be used directly in your HTML templates
 
 ### Backend Development
 - Django views are in `app/app/views.py`
@@ -92,11 +79,10 @@ The application requires running both the Django backend server and the Vite dev
 
 ### Building for Production
 
-To build the frontend assets for production:
+To build the CSS for production:
 
 ```bash
-cd app/frontend
 npm run build
 ```
 
-This will create optimized assets in the `app/static/dist` directory, which Django will serve in production.
+This will create an optimized CSS file in the `static/dist` directory, which Django will serve in production.

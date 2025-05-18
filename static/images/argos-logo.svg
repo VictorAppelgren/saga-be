@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 382.53 79.99">
+  <defs>
+    <style>
+      .cls-1 {
+        font-size: 72px;
+      }
+
+      .cls-1, .cls-2 {
+        fill: #fff;
+        font-family: Montserrat-Light, Montserrat;
+        font-weight: 300;
+      }
+
+      .cls-3 {
+        fill: none;
+        stroke: #fff;
+        stroke-miterlimit: 10;
+        stroke-width: 3px;
+      }
+
+      .cls-4 {
+        letter-spacing: 0em;
+      }
+
+      .cls-2 {
+        font-size: 21px;
+      }
+    </style>
+  </defs>
+  <text class="cls-1" transform="translate(0 61.2)"><tspan x="0" y="0">ARGOS</tspan></text>
+  <rect class="cls-3" x="273.39" y="10.44" width="107.64" height="51.12"/>
+  <text class="cls-2" transform="translate(293.65 30.28)"><tspan x="0" y="0">10000</tspan><tspan class="cls-4" x="62.68" y="0">0</tspan><tspan x="76.48" y="0">1</tspan><tspan x="1.03" y="25.2" xml:space="preserve"> 10</tspan><tspan class="cls-4" x="27.66" y="25.2">0</tspan><tspan x="41.45" y="25.2">10</tspan><tspan class="cls-4" x="62.68" y="25.2">0</tspan><tspan x="76.48" y="25.2">1</tspan></text>
+</svg>
