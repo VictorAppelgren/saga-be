@@ -1,88 +1,117 @@
-# Split Screen Application
+# Backend & Pipelines Repository
 
-A Django application featuring a split-screen interface with a result display and chat interface. The application uses modern frontend tooling with Tailwind CSS.
+## Overview
+This repository contains all **backend services** and **data processing pipelines** for our "Snapshot of the World" platform.  
+It powers the ingestion, validation, storage, and querying of world state data that the frontend interacts with via HTTP APIs.
 
-## Project Structure
+We enforce **TypeScript** across the entire backend to ensure type safety, maintainability, and consistency.
 
-```
-application/
-├── static/
-│   ├── src/
-│   │   └── main.css      # Tailwind CSS source
-│   └── dist/
-│       └── main.css      # Compiled CSS output
-├── templates/            # Django templates
-│   ├── base.html         # Base template with split-screen layout
-│   └── home.html         # Home page template
-├── app/                  # Django project configuration
-│   ├── settings.py       # Django settings
-│   ├── urls.py           # URL configuration
-│   └── views.py          # View functions
-├── package.json          # NPM dependencies
-├── tailwind.config.js    # Tailwind configuration
-└── postcss.config.js     # PostCSS configuration
-```
+---
 
-## Prerequisites
+## Modules
 
-- Python 3.x
-- Node.js and npm
-- Django
-- Tailwind CSS
+### 1. **API Services**
+- **Description:** Exposes HTTP endpoints for the frontend and other clients.
+- **Responsibilities:**
+  - Receive user requests (queries, task scheduling).
+  - Translate natural language requests into structured queries.
+  - Retrieve and aggregate insights from the graph database.
+  - Trigger deeper analysis workflows.
+- **Tech stack:**
+  - Language: **TypeScript**
+  - Framework: Express.js or Fastify
+  - Authentication: JWT-based (details TBD)
+  - API Documentation: OpenAPI (Swagger)
 
-## Installation
+---
 
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd application
-   ```
+### 2. **Data Ingestion Pipelines**
+- **Description:** Pulls and streams data from external sources into our system.
+- **Two pipeline types:**
+  1. **Real-time ingestion** (scalable event-driven consumers).
+  2. **Scheduled ingestion** (cron-based, predictable fetches).
+- **Responsibilities:**
+  - Connect to external APIs, feeds, and databases.
+  - Normalize and enrich incoming data.
+  - Push raw data into the validation pipeline via a message bus (Kafka/NATS).
+- **Tech stack:**
+  - Language: **TypeScript**
+  - Runtime: Node.js
+  - Messaging: Kafka, RabbitMQ, or AWS Kinesis
 
-2. Install Python dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+---
 
-3. Install frontend dependencies:
-   ```bash
-   npm install
-   ```
+### 3. **Data Processing & Validation**
+- **Description:** Ensures that only unique, high-quality data enters the "snapshot of the world."
+- **Responsibilities:**
+  - Deduplicate entries.
+  - Validate using AI/ML models (run as separate services).
+  - Tag data with provenance metadata.
+  - Route invalid or suspicious data to cold storage.
+- **Tech stack:**
+  - Language: **TypeScript**
+  - AI/ML inference calls via HTTP or gRPC to model-serving services.
 
-## Running the Application
+---
 
-1. Start the Tailwind CSS watcher:
-   ```bash
-   npm run watch
-   ```
-   This will watch for changes in your CSS and compile them automatically
+### 4. **Storage Integration**
+- **Description:** Handles interactions with storage systems.
+- **Responsibilities:**
+  - Write validated data to the graph database.
+  - Maintain versioned snapshots for historical state queries.
+  - Archive raw/unvalidated data for future reprocessing.
+- **Tech stack:**
+  - Language: **TypeScript**
+  - Database: Neo4j, AWS Neptune, or other graph DB
+  - Object Storage: S3-compatible
 
-2. In a separate terminal, start the Django development server:
-   ```bash
-   python manage.py runserver
-   ```
-   This will start the Django server on http://localhost:8000
+---
 
-3. Visit http://localhost:8000 in your browser to see the application
+### 5. **Infrastructure-as-Code (IaC)**
+- **Description:** Defines and manages backend cloud/on-prem infrastructure.
+- **Responsibilities:**
+  - Provision servers, message queues, databases, and networking.
+  - Configure CI/CD pipelines for deployments.
+- **Tech stack:**
+  - Language: **TypeScript**
+  - Tool: AWS CDK / Pulumi
 
-## Development
+---
 
-### Frontend Development
-- Tailwind CSS is used for styling
-- Edit `static/src/main.css` for custom CSS
-- The CSS is automatically compiled to `static/dist/main.css`
-- Tailwind's utility classes can be used directly in your HTML templates
+## Development Guidelines
 
-### Backend Development
-- Django views are in `app/app/views.py`
-- Templates are in `app/templates/`
-- URL routing is configured in `app/app/urls.py`
+1. **Language Enforcement**
+   - Only **TypeScript** is allowed for all application logic.
+   - Strict TypeScript compiler settings enabled in `tsconfig.json`.
 
-### Building for Production
+2. **Code Style**
+   - Use ESLint + Prettier with project-wide configs.
+   - Follow functional programming principles where possible.
 
-To build the CSS for production:
+3. **Folder Structure**
+/api # API services
+/pipelines # Ingestion pipelines
+/validation # Processing & validation logic
+/storage # Storage integration layer
+/infrastructure # Infrastructure-as-code
+/shared # Shared utilities and types
 
-```bash
-npm run build
-```
+4. **Commit Guidelines**
+- Use Conventional Commits (`feat:`, `fix:`, `chore:`, etc.).
+- Always include a short description of the change.
 
-This will create an optimized CSS file in the `static/dist` directory, which Django will serve in production.
+5. **Testing**
+- Unit tests with Jest.
+- Integration tests for API and pipeline flows.
+
+6. **Boilerplate Generation**
+- This repo is designed to work with AI-assisted boilerplate generation.
+- When generating code:
+  - Reference the relevant module section above.
+  - Always generate TypeScript.
+  - Include inline JSDoc comments for public functions.
+  - Follow folder structure strictly.
+
+---
+
+## Example AI Prompt for Boilerplate
