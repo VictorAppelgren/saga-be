@@ -1,0 +1,29 @@
+{
+  "users": [
+    {
+      "username": "Victor",
+      "password": "v123",
+      "accessible_topics": [
+        "brent",
+        "eurusd",
+        "dxy",
+        "copper",
+        "fed_policy",
+        "ecb_policy",
+        "euribor"
+      ]
+    },
+    {
+      "username": "William", 
+      "password": "w456",
+      "accessible_topics": [
+        "eurusd",
+        "fed_policy",
+        "euro_inflation",
+        "boj_policy",
+        "bund10y",
+        "copper"
+      ]
+    }
+  ]
+}
