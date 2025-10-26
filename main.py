@@ -63,7 +63,7 @@ class CreateStrategyRequest(BaseModel):
     target: str = ""
 
 
-# ============ AUTH ============
+# ============ AUTH & USERS ============
 @app.post("/login")
 def login(request: LoginRequest):
     """Authenticate user"""
@@ -71,6 +71,13 @@ def login(request: LoginRequest):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return user
+
+
+@app.get("/api/users")
+def list_users():
+    """Get all users (for saga-graph to iterate over)"""
+    usernames = user_manager.list_users()
+    return {"users": [{"username": u} for u in usernames]}
 
 
 # ============ INTERESTS ============
