@@ -73,7 +73,7 @@ def login(request: LoginRequest):
     return user
 
 
-@app.get("/api/users")
+@app.get("/users")
 def list_users():
     """Get all users (for saga-graph to iterate over)"""
     usernames = user_manager.list_users()
@@ -126,14 +126,14 @@ def get_interests(username: str = Query(...)):
 
 
 # ============ ARTICLES ============
-@app.post("/api/articles")
+@app.post("/articles")
 def store_article(article: Dict[str, Any]):
     """Store article to files"""
     argos_id = article_manager.store_article(article)
     return {"argos_id": argos_id, "status": "stored"}
 
 
-@app.get("/api/articles/{article_id}")
+@app.get("/articles/{article_id}")
 def get_article(article_id: str):
     """Get article from files"""
     article = article_manager.get_article(article_id)

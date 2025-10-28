@@ -12,3 +12,12 @@ data/
 venv
 
 users/Victor/archive/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.cpython-*.pyc
+**/__pycache__/
+**/*.cpython-*.pyc
+*.egg-info/
+*.egg

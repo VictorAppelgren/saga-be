@@ -1,8 +1,9 @@
 """Article Storage Manager - Simple file-based storage"""
 import os
 import json
+import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 from datetime import datetime
 
 
@@ -74,3 +75,112 @@ class ArticleStorageManager:
                 if file.endswith(".json"):
                     ids.add(file.replace(".json", ""))
         return ids
+    
+    def _build_keyword_pattern(self, kw: str) -> re.Pattern:
+        """Build regex pattern for keyword matching with flexible separators"""
+        s = kw.lower().strip()
+        parts = re.split(r"[-/\s]+", s)
+        parts = [p for p in parts if p]
+        if not parts:
+            inner = re.escape(s)
+        else:
+            inner = r"(?:[-/\s]?)".join(re.escape(p) for p in parts)
+        pattern = rf"(?<![a-z0-9]){inner}(?![a-z0-9])"
+        return re.compile(pattern)
+    
+    def search_by_keywords(
+        self,
+        keywords: List[str],
+        limit: int = 5,
+        min_hits: int = 3,
+        exclude_ids: Optional[Set[str]] = None
+    ) -> List[Dict]:
+        """
+        Search articles by keyword matching.
+        Returns list of article IDs with metadata sorted by relevance.
+        
+        Args:
+            keywords: List of keywords to search for
+            limit: Maximum number of results
+            min_hits: Minimum number of keyword matches required
+            exclude_ids: Set of article IDs to skip
+        
+        Returns:
+            [
+                {
+                    "article_id": "ABC123",
+                    "matched_keywords": ["fed", "rate"],
+                    "hit_count": 2,
+                    "text_preview": "..."
+                },
+                ...
+            ]
+        """
+        exclude_ids = exclude_ids or set()
+        
+        # Prepare keywords and patterns
+        kw_lower = []
+        seen = set()
+        for k in keywords:
+            if not k:
+                continue
+            kk = k.lower()
+            if kk in seen:
+                continue
+            seen.add(kk)
+            kw_lower.append(kk)
+        
+        compiled = [(k, self._build_keyword_pattern(k)) for k in kw_lower]
+        matches = []
+        scanned = 0
+        
+        # Get all date directories, sorted newest first
+        days = [d for d in self.data_dir.iterdir() if d.is_dir()]
+        days_sorted = sorted(days, key=lambda p: p.name, reverse=True)
+        
+        for day_dir in days_sorted:
+            json_files = sorted(day_dir.glob("*.json"), key=lambda p: p.name, reverse=True)
+            
+            for file_path in json_files:
+                scanned += 1
+                article_id = file_path.stem
+                
+                # Skip excluded articles
+                if article_id in exclude_ids:
+                    continue
+                
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        article_data = json.load(f)
+                    
+                    # Extract text fields (handle both wrapped and unwrapped formats)
+                    data = article_data.get("data", article_data)
+                    title = data.get("title", "")
+                    summary = data.get("summary", "") or data.get("description", "")
+                    argos_summary = data.get("argos_summary", "")
+                    
+                    # Concatenate text
+                    text = " ".join([title, summary, argos_summary]).strip()
+                    text_lower = text.lower()
+                    
+                    # Match keywords
+                    matched_keywords = [k for (k, pat) in compiled if pat.search(text_lower)]
+                    hit_count = len(matched_keywords)
+                    
+                    # Check if meets threshold
+                    if hit_count >= min_hits:
+                        matches.append({
+                            "article_id": article_id,
+                            "matched_keywords": matched_keywords,
+                            "hit_count": hit_count,
+                            "text_preview": text[:200] + "..." if len(text) > 200 else text
+                        })
+                        
+                        if len(matches) >= limit:
+                            return matches
+                
+                except Exception:
+                    # Skip files that can't be read
+                    continue
+        
+        return matches
