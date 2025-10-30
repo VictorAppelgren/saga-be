@@ -65,11 +65,31 @@ class CreateStrategyRequest(BaseModel):
 
 # ============ AUTH & USERS ============
 @app.post("/login")
-def login(request: LoginRequest):
+def login(request: LoginRequest, response: Response):
     """Authenticate user"""
     user = user_manager.authenticate(request.username, request.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Generate session token (simple: username + timestamp hash)
+    import hashlib
+    import time
+    session_token = hashlib.sha256(f"{user['username']}{time.time()}".encode()).hexdigest()
+    
+    # Set secure HTTP-only cookie
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        max_age=86400,  # 24 hours
+        samesite="lax"
+    )
+    
+    # Store session in memory (simple dict for now)
+    if not hasattr(app.state, 'sessions'):
+        app.state.sessions = {}
+    app.state.sessions[session_token] = user['username']
+    
     return user
 
 
