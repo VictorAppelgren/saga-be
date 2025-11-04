@@ -31,7 +31,7 @@ def login(request: LoginRequest):
 
 
 @router.get("/users/{username}")
-def get_user(username: str, x_api_key: str = Header(...)):
+def get_user(username: str):
     """Get user info (without password)"""
     user = user_manager.get_user(username)
     if not user:

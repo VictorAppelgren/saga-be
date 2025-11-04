@@ -30,21 +30,21 @@ class StrategyResponse(BaseModel):
 
 # Routes
 @router.get("/users/list")
-def list_strategy_users(x_api_key: str = Header(...)):
+def list_strategy_users():
     """List all users with strategies"""
     users = storage.list_users()
     return {"users": users}
 
 
 @router.get("/users/{username}/strategies")
-def list_user_strategies(username: str, x_api_key: str = Header(...)):
+def list_user_strategies(username: str):
     """List all strategies for a user"""
     strategies = storage.list_strategies(username)
     return {"strategies": strategies}
 
 
 @router.get("/users/{username}/strategies/{strategy_id}", response_model=StrategyResponse)
-def get_strategy(username: str, strategy_id: str, x_api_key: str = Header(...)):
+def get_strategy(username: str, strategy_id: str):
     """Get full strategy"""
     strategy = storage.get_strategy(username, strategy_id)
     if not strategy:
@@ -53,7 +53,7 @@ def get_strategy(username: str, strategy_id: str, x_api_key: str = Header(...)):
 
 
 @router.put("/users/{username}/strategies/{strategy_id}", response_model=StrategyResponse)
-def update_strategy(username: str, strategy_id: str, strategy: Dict[str, Any], x_api_key: str = Header(...)):
+def update_strategy(username: str, strategy_id: str, strategy: Dict[str, Any]):
     """Update strategy"""
     existing = storage.get_strategy(username, strategy_id)
     if not existing:

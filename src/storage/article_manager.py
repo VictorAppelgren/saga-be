@@ -2,9 +2,14 @@
 import os
 import json
 import re
+import random
+import string
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 class ArticleStorageManager:
@@ -16,6 +21,11 @@ class ArticleStorageManager:
         self.today_dir = self.data_dir / self.today_str
         os.makedirs(self.today_dir, exist_ok=True)
         self.article_ids = self._load_existing_ids()
+        
+        logger.info(f"📁 ArticleStorageManager initialized")
+        logger.info(f"   Data dir: {self.data_dir.absolute()}")
+        logger.info(f"   Today dir: {self.today_dir.absolute()}")
+        logger.info(f"   Existing articles: {len(self.article_ids)}")
     
     def store_article(self, article_data: Dict) -> str:
         """Store article, returns argos_id"""
@@ -24,13 +34,17 @@ class ArticleStorageManager:
             raise ValueError("Article must have argos_id")
         
         if argos_id in self.article_ids:
+            logger.info(f"♻️  Article {argos_id} already exists, skipping")
             return argos_id
         
         file_path = self.today_dir / f"{argos_id}.json"
+        logger.info(f"💾 Storing article {argos_id} to {file_path}")
+        
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(article_data, f, indent=2)
         
         self.article_ids.add(argos_id)
+        logger.info(f"✅ Article {argos_id} stored successfully")
         return argos_id
     
     def get_article(self, article_id: str) -> Optional[Dict]:
@@ -75,6 +89,30 @@ class ArticleStorageManager:
                 if file.endswith(".json"):
                     ids.add(file.replace(".json", ""))
         return ids
+    
+    def find_article_by_url(self, url: str) -> Optional[str]:
+        """
+        Find article by URL (deduplication check).
+        Returns argos_id if found, None otherwise.
+        Simple implementation: scan all articles.
+        """
+        if not url:
+            return None
+        
+        for date_dir in self.data_dir.iterdir():
+            if not date_dir.is_dir():
+                continue
+            
+            for article_file in date_dir.glob("*.json"):
+                try:
+                    with open(article_file, 'r', encoding='utf-8') as f:
+                        article = json.load(f)
+                        if article.get("url") == url:
+                            return article.get("argos_id")
+                except Exception:
+                    continue
+        
+        return None
     
     def _build_keyword_pattern(self, kw: str) -> re.Pattern:
         """Build regex pattern for keyword matching with flexible separators"""
@@ -184,3 +222,66 @@ class ArticleStorageManager:
                     continue
         
         return matches
+    
+    def generate_article_id(self) -> str:
+        """
+        Generate a unique 9-character article ID.
+        Format: Uppercase letters + digits (e.g., ABC123XYZ)
+        Checks against existing IDs to ensure uniqueness.
+        """
+        charset = string.ascii_uppercase + string.digits
+        
+        while True:
+            # Generate random 9-char ID
+            new_id = ''.join(random.choices(charset, k=9))
+            
+            # Ensure it's unique
+            if new_id not in self.article_ids:
+                return new_id
+    
+    def find_by_url_date(self, url: str, published_date: str) -> Optional[str]:
+        """
+        Find article by URL and published date (deduplication check).
+        
+        Scans recent date directories (last 30 days) for matching article.
+        Returns article ID if found, None if not found.
+        
+        Args:
+            url: Article URL
+            published_date: Publication date (YYYY-MM-DD format)
+        
+        Returns:
+            Article ID if duplicate found, None otherwise
+        """
+        if not url or not published_date:
+            return None
+        
+        # Get date directories to search (sorted newest first)
+        date_dirs = sorted(
+            [d for d in self.data_dir.iterdir() if d.is_dir()],
+            reverse=True
+        )
+        
+        # Limit search to last 30 directories (roughly 30 days)
+        date_dirs = date_dirs[:30]
+        
+        # Scan each directory for matching article
+        for date_dir in date_dirs:
+            for file_path in date_dir.glob("*.json"):
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        article = json.load(f)
+                    
+                    # Check if URL and date match
+                    article_data = article.get("data", article)
+                    if (article_data.get("url") == url and 
+                        article_data.get("published_date") == published_date):
+                        # Found duplicate! Return existing ID
+                        return file_path.stem  # filename without .json
+                
+                except Exception:
+                    # Skip files that can't be read
+                    continue
+        
+        # No duplicate found
+        return None

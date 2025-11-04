@@ -4,12 +4,20 @@ Handles file storage + proxies to Graph API for Neo4j/LLM
 """
 import os
 import json
+import logging
 import requests
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s:     %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -18,6 +26,9 @@ load_dotenv()
 from src.storage.user_manager import UserManager
 from src.storage.article_manager import ArticleStorageManager
 from src.storage.strategy_manager import StrategyStorageManager
+
+# Import API routers
+from src.api.routes import articles
 
 # Initialize managers
 user_manager = UserManager()
@@ -43,6 +54,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"📥 {request.method} {request.url.path}")
+    logger.info(f"   Cookies: {dict(request.cookies)}")
+    response = await call_next(request)
+    logger.info(f"📤 Status: {response.status_code}")
+    return response
+
+# Include routers
+app.include_router(articles.router)
+
 # Models
 class LoginRequest(BaseModel):
     username: str
@@ -64,7 +87,7 @@ class CreateStrategyRequest(BaseModel):
 
 
 # ============ AUTH & USERS ============
-@app.post("/login")
+@app.post("/api/login")
 def login(request: LoginRequest, response: Response):
     """Authenticate user"""
     user = user_manager.authenticate(request.username, request.password)
@@ -80,6 +103,7 @@ def login(request: LoginRequest, response: Response):
     response.set_cookie(
         key="session_token",
         value=session_token,
+        path="/",
         httponly=True,
         max_age=86400,  # 24 hours
         samesite="lax"
@@ -93,7 +117,7 @@ def login(request: LoginRequest, response: Response):
     return user
 
 
-@app.get("/users")
+@app.get("/api/users")
 def list_users():
     """Get all users (for saga-graph to iterate over)"""
     usernames = user_manager.list_users()
@@ -101,7 +125,7 @@ def list_users():
 
 
 # ============ INTERESTS ============
-@app.get("/topics/all")
+@app.get("/api/topics/all")
 def get_all_topics():
     """Get all topics from Neo4j - for debugging"""
     try:
@@ -115,7 +139,7 @@ def get_all_topics():
         raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
 
 
-@app.get("/interests")
+@app.get("/api/interests")
 def get_interests(username: str = Query(...)):
     """Get user's accessible topics with names from Neo4j"""
     user = user_manager.get_user(username)
@@ -146,56 +170,19 @@ def get_interests(username: str = Query(...)):
 
 
 # ============ ARTICLES ============
-@app.post("/articles")
-def store_article(article: Dict[str, Any]):
-    """Store article to files"""
-    argos_id = article_manager.store_article(article)
-    return {"argos_id": argos_id, "status": "stored"}
-
-
-@app.get("/articles/{article_id}")
-def get_article(article_id: str):
-    """Get article from files"""
-    article = article_manager.get_article(article_id)
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
-    return article
-
-
-@app.get("/articles")
-def get_articles_for_topic(topic_id: str = Query(...)):
-    """Get articles for topic - queries Neo4j then loads from files"""
-    # Call Graph API to get article IDs from Neo4j
-    try:
-        response = requests.get(
-            f"{GRAPH_API_URL}/neo/query-articles",
-            params={"topic_id": topic_id},
-            timeout=10
-        )
-        response.raise_for_status()
-        article_ids = response.json()["article_ids"]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
-    
-    # Load full articles from files
-    articles = []
-    for article_id in article_ids:
-        article = article_manager.get_article(article_id)
-        if article:
-            articles.append(article)
-    
-    return {"articles": articles}
+# Article routes moved to src/api/routes/articles.py router
+# Router includes: POST /articles/ingest, GET /articles/{id}, POST /articles/search
 
 
 # ============ STRATEGIES ============
-@app.get("/strategies")
+@app.get("/api/strategies")
 def list_strategies(username: str = Query(...)):
     """List user's strategies"""
     strategies = strategy_manager.list_strategies(username)
     return {"strategies": strategies}
 
 
-@app.get("/strategies/{strategy_id}")
+@app.get("/api/strategies/{strategy_id}")
 def get_strategy(strategy_id: str, username: str = Query(...)):
     """Get strategy details"""
     strategy = strategy_manager.get_strategy(username, strategy_id)
@@ -204,7 +191,7 @@ def get_strategy(strategy_id: str, username: str = Query(...)):
     return strategy
 
 
-@app.post("/strategies")
+@app.post("/api/strategies")
 def create_strategy(request: CreateStrategyRequest):
     """Create new strategy"""
     from datetime import datetime
@@ -228,7 +215,7 @@ def create_strategy(request: CreateStrategyRequest):
     return strategy
 
 
-@app.put("/strategies/{strategy_id}")
+@app.put("/api/strategies/{strategy_id}")
 def update_strategy(strategy_id: str, strategy: Dict[str, Any]):
     """Update strategy"""
     username = strategy.get("username")
@@ -247,7 +234,7 @@ def update_strategy(strategy_id: str, strategy: Dict[str, Any]):
     return strategy
 
 
-@app.delete("/strategies/{strategy_id}")
+@app.delete("/api/strategies/{strategy_id}")
 def delete_strategy(strategy_id: str, username: str = Query(...)):
     """Archive strategy"""
     import shutil
@@ -271,7 +258,7 @@ def delete_strategy(strategy_id: str, username: str = Query(...)):
 
 
 # ============ REPORTS ============
-@app.get("/reports/{topic_id}")
+@app.get("/api/reports/{topic_id}")
 def get_report(topic_id: str):
     """Get report - proxy to Graph API"""
     try:
@@ -286,7 +273,7 @@ def get_report(topic_id: str):
 
 
 # ============ CHAT ============
-@app.post("/chat")
+@app.post("/api/chat")
 def chat(request: ChatRequest):
     """Chat - Backend handles ALL LLM logic with incredible prompt"""
     from langchain_openai import ChatOpenAI
