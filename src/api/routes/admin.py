@@ -203,3 +203,33 @@ def get_admin_summary():
         return response.json()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
+
+
+# ============================================================================
+# TOPICS ENDPOINTS
+# ============================================================================
+
+@router.get("/topics")
+def get_all_topics():
+    """Get all topics from Neo4j"""
+    try:
+        response = requests.get(f"{GRAPH_API_URL}/neo/topics/all", timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
+
+
+@router.get("/topics/{topic_id}")
+def get_topic_details(topic_id: str):
+    """Get detailed topic information including articles and reports"""
+    try:
+        response = requests.post(
+            f"{GRAPH_API_URL}/neo/build-context",
+            params={"topic_id": topic_id},
+            timeout=10
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")

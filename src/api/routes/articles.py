@@ -35,7 +35,7 @@ class KeywordSearchResult(BaseModel):
     article_id: str
     matched_keywords: List[str]
     hit_count: int
-    full_text: str
+    article: Dict[str, Any]  # Full article object
 
 
 # Routes

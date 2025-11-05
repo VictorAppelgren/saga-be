@@ -220,11 +220,12 @@ class ArticleStorageManager:
                     
                     # Check if meets threshold
                     if hit_count >= min_hits:
+                        # Return full article object (like old logic)
                         matches.append({
                             "article_id": article_id,
                             "matched_keywords": matched_keywords,
                             "hit_count": hit_count,
-                            "full_text": text
+                            "article": article_data  # Full article object
                         })
                         
                         if len(matches) >= limit:
