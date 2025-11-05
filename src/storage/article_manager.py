@@ -224,7 +224,7 @@ class ArticleStorageManager:
                             "article_id": article_id,
                             "matched_keywords": matched_keywords,
                             "hit_count": hit_count,
-                            "text_preview": text[:200] + "..." if len(text) > 200 else text
+                            "full_text": text
                         })
                         
                         if len(matches) >= limit:

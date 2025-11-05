@@ -35,7 +35,7 @@ class KeywordSearchResult(BaseModel):
     article_id: str
     matched_keywords: List[str]
     hit_count: int
-    text_preview: str
+    full_text: str
 
 
 # Routes
