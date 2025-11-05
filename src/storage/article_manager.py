@@ -37,7 +37,20 @@ class ArticleStorageManager:
             logger.info(f"♻️  Article {argos_id} already exists, skipping")
             return argos_id
         
-        file_path = self.today_dir / f"{argos_id}.json"
+        # Use article's publication date for directory, fallback to today
+        pub_date = article_data.get("pubDate") or article_data.get("published_date")
+        if pub_date:
+            # Extract YYYY-MM-DD from various formats
+            # Handles: "2025-10-31", "2025-10-31T12:00:00", "2025-10-31T12:00:00+05:30"
+            date_str = pub_date.split("T")[0]
+            target_dir = self.data_dir / date_str
+            os.makedirs(target_dir, exist_ok=True)
+        else:
+            # Fallback to today if no publication date
+            target_dir = self.today_dir
+            logger.warning(f"No publication date for {argos_id}, using today's directory")
+        
+        file_path = target_dir / f"{argos_id}.json"
         logger.info(f"💾 Storing article {argos_id} to {file_path}")
         
         with open(file_path, "w", encoding="utf-8") as f:

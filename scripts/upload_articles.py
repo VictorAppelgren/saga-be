@@ -68,10 +68,11 @@ def main():
     parser = argparse.ArgumentParser(description="Bulk upload articles to Backend API")
     parser.add_argument('--limit', type=int, help='Maximum number of articles to upload')
     parser.add_argument('--backend-url', type=str, 
-                       default=os.getenv('BACKEND_API_URL', 'http://localhost:8000'),
+                       default=os.getenv('BACKEND_API_URL', 'http://167.172.185.204'),
+                       # default=os.getenv('BACKEND_API_URL', 'http://localhost:8000'),  # Local dev
                        help='Backend API URL')
     parser.add_argument('--api-key', type=str,
-                       default=os.getenv('BACKEND_API_KEY', ''),
+                       default=os.getenv('BACKEND_API_KEY', '785fc6c1647ff650b6b611509cc0a8f47009e6b743340503519d433f111fcf12'),
                        help='Backend API key')
     args = parser.parse_args()
     
