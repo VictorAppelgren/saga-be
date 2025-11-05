@@ -25,7 +25,8 @@ class UserManager:
             if user["username"] == username and user["password"] == password:
                 return {
                     "username": user["username"],
-                    "accessible_topics": user["accessible_topics"]
+                    "accessible_topics": user["accessible_topics"],
+                    "is_admin": user.get("is_admin", False)
                 }
         return None
     
@@ -36,7 +37,8 @@ class UserManager:
             if user["username"] == username:
                 return {
                     "username": user["username"],
-                    "accessible_topics": user["accessible_topics"]
+                    "accessible_topics": user["accessible_topics"],
+                    "is_admin": user.get("is_admin", False)
                 }
         return None
     

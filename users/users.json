@@ -3,6 +3,7 @@
     {
       "username": "Victor",
       "password": "v123",
+      "is_admin": true,
       "accessible_topics": [
         "brent",
         "eurusd",
@@ -16,6 +17,7 @@
     {
       "username": "William", 
       "password": "w456",
+      "is_admin": false,
       "accessible_topics": [
         "eurusd",
         "fed_policy",
