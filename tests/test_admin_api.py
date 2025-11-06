@@ -8,6 +8,8 @@ import json
 from datetime import datetime
 
 # Configuration
+# Run this ON THE SERVER (not from laptop)
+# Uses localhost because we're inside the server network
 BACKEND_URL = "http://localhost:8000"
 GRAPH_API_URL = "http://localhost:8001"
 
