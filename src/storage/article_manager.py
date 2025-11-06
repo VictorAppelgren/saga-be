@@ -22,10 +22,15 @@ class ArticleStorageManager:
         os.makedirs(self.today_dir, exist_ok=True)
         self.article_ids = self._load_existing_ids()
         
+        # URL cache for fast deduplication
+        self.url_to_id: Dict[str, str] = {}
+        self._build_url_cache()
+        
         logger.info(f"📁 ArticleStorageManager initialized")
         logger.info(f"   Data dir: {self.data_dir.absolute()}")
         logger.info(f"   Today dir: {self.today_dir.absolute()}")
         logger.info(f"   Existing articles: {len(self.article_ids)}")
+        logger.info(f"   URL cache: {len(self.url_to_id)} URLs indexed")
     
     def store_article(self, article_data: Dict) -> str:
         """Store article, returns argos_id"""
@@ -56,7 +61,12 @@ class ArticleStorageManager:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(article_data, f, indent=2)
         
+        # Update caches
         self.article_ids.add(argos_id)
+        url = article_data.get("url")
+        if url:
+            self.url_to_id[url] = argos_id
+        
         logger.info(f"✅ Article {argos_id} stored successfully")
         return argos_id
     
@@ -103,15 +113,9 @@ class ArticleStorageManager:
                     ids.add(file.replace(".json", ""))
         return ids
     
-    def find_article_by_url(self, url: str) -> Optional[str]:
-        """
-        Find article by URL (deduplication check).
-        Returns argos_id if found, None otherwise.
-        Simple implementation: scan all articles.
-        """
-        if not url:
-            return None
-        
+    def _build_url_cache(self):
+        """Build URL→ID cache on startup for fast lookups"""
+        count = 0
         for date_dir in self.data_dir.iterdir():
             if not date_dir.is_dir():
                 continue
@@ -120,12 +124,24 @@ class ArticleStorageManager:
                 try:
                     with open(article_file, 'r', encoding='utf-8') as f:
                         article = json.load(f)
-                        if article.get("url") == url:
-                            return article.get("argos_id")
+                        url = article.get("url")
+                        if url:
+                            article_id = article_file.stem
+                            self.url_to_id[url] = article_id
+                            count += 1
                 except Exception:
                     continue
+    
+    def find_article_by_url(self, url: str) -> Optional[str]:
+        """
+        Find article by URL using cache (fast).
+        Returns argos_id if found, None otherwise.
+        """
+        if not url:
+            return None
         
-        return None
+        # Check cache (instant lookup)
+        return self.url_to_id.get(url)
     
     def _build_keyword_pattern(self, kw: str) -> re.Pattern:
         """Build regex pattern for keyword matching with flexible separators"""
@@ -236,6 +252,38 @@ class ArticleStorageManager:
                     continue
         
         return matches
+    
+    def article_exists(self, article_id: str) -> bool:
+        """
+        Check if article exists in storage (fast file check).
+        
+        Searches all date directories for the article file.
+        Uses in-memory cache first, then scans filesystem.
+        
+        Args:
+            article_id: Article ID to check
+        
+        Returns:
+            True if article exists, False otherwise
+        """
+        # Quick check in memory cache
+        if article_id in self.article_ids:
+            return True
+        
+        # Scan all date directories (newest first)
+        date_dirs = sorted(
+            [d for d in self.data_dir.iterdir() if d.is_dir()],
+            reverse=True
+        )
+        
+        for date_dir in date_dirs:
+            file_path = date_dir / f"{article_id}.json"
+            if file_path.exists():
+                # Update cache
+                self.article_ids.add(article_id)
+                return True
+        
+        return False
     
     def generate_article_id(self) -> str:
         """

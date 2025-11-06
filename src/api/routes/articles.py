@@ -107,75 +107,119 @@ def search_articles_by_keywords(
         raise HTTPException(status_code=500, detail=f"Search error: {str(e)}")
 
 
+@router.post("/check-existence")
+def check_article_existence(article_ids: List[str]):
+    """
+    Check which articles exist in storage.
+    Returns list of IDs that are MISSING (need upload).
+    
+    Useful for bulk upload scripts to avoid re-uploading existing articles.
+    
+    Args:
+        article_ids: List of article IDs to check
+    
+    Returns:
+        {
+            "missing": ["ID1", "ID2", ...],
+            "existing": ["ID3", "ID4", ...],
+            "checked": 100
+        }
+    """
+    try:
+        missing = []
+        existing = []
+        
+        for article_id in article_ids:
+            if storage.article_exists(article_id):
+                existing.append(article_id)
+            else:
+                missing.append(article_id)
+        
+        logger.info(f"Existence check: {len(article_ids)} IDs → {len(existing)} exist, {len(missing)} missing")
+        
+        return {
+            "missing": missing,
+            "existing": existing,
+            "checked": len(article_ids)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Existence check error: {str(e)}")
+
+
 @router.post("/ingest")
 def ingest_article(article_data: Dict[str, Any]):
     """
-    Ingest article with automatic deduplication.
+    Ingest article with dual deduplication (ID + URL).
     
-    Checks if article already exists (by URL + date).
-    - If exists: Returns existing article ID
-    - If new: Generates ID, stores article, returns new ID
+    Strategy:
+    1. If ID provided: Check if exists, use it if new
+    2. If no ID or ID not found: Check URL for duplicates
+    3. If URL exists under different ID: Return existing, log warning
+    4. If completely new: Use provided ID or generate new one
     
-    This is the PRIMARY endpoint for workers to use.
-    Backend controls ID generation to prevent duplicates.
-    
-    Example:
-        POST /api/articles/ingest
-        {
-            "url": "https://...",
-            "title": "Fed raises rates",
-            "published_date": "2025-10-31",
-            "content": "...",
-            ...
-        }
+    This handles both:
+    - Bulk uploads (preserve IDs from filenames)
+    - Live workers (auto-generate IDs)
     
     Returns:
         {
             "argos_id": "ABC123XYZ",
             "status": "created" | "existing",
-            "data": {...}
+            "reason": "id_match" | "url_match" | "new_article"
         }
     """
     try:
-        # Extract URL for deduplication check
+        provided_id = article_data.get("argos_id")
         url = article_data.get("url")
         
-        logger.info(f"📥 Ingest request: {url}")
+        logger.info(f"📥 Ingest: ID={provided_id}, URL={url}")
         
         if not url:
-            raise HTTPException(
-                status_code=400,
-                detail="Article must have 'url'"
-            )
+            raise HTTPException(status_code=400, detail="Article must have 'url'")
         
-        # Check if article already exists by URL
-        existing_id = storage.find_article_by_url(url)
+        # STEP 1: Check by ID (if provided)
+        if provided_id:
+            existing_by_id = storage.get_article(provided_id)
+            if existing_by_id:
+                logger.info(f"♻️  ID exists: {provided_id}")
+                return {
+                    "argos_id": provided_id,
+                    "status": "existing",
+                    "reason": "id_match"
+                }
         
-        if existing_id:
-            # Duplicate found - return existing article
-            logger.info(f"♻️  Duplicate article detected: {url} → {existing_id}")
-            existing_article = storage.get_article(existing_id)
+        # STEP 2: Check by URL
+        existing_id_by_url = storage.find_article_by_url(url)
+        
+        if existing_id_by_url:
+            # URL exists
+            if provided_id and provided_id != existing_id_by_url:
+                # CONFLICT: Same URL, different IDs
+                logger.warning(
+                    f"⚠️  URL CONFLICT: URL exists as {existing_id_by_url}, "
+                    f"requested ID {provided_id}. Skipping duplicate."
+                )
+            
+            logger.info(f"♻️  URL exists: {existing_id_by_url}")
+            existing_article = storage.get_article(existing_id_by_url)
             return {
-                "argos_id": existing_id,
+                "argos_id": existing_id_by_url,
                 "status": "existing",
-                "data": existing_article
+                "reason": "url_match"
             }
         
-        # New article - generate ID and store
-        argos_id = storage.generate_article_id()
+        # STEP 3: New article - use provided ID or generate
+        argos_id = provided_id or storage.generate_article_id()
         article_data["argos_id"] = argos_id
         
-        logger.info(f"🆕 New article ID: {argos_id}")
-        logger.info(f"💾 Calling storage.store_article()...")
-        
-        # Store article
+        logger.info(f"🆕 New article: {argos_id}")
         storage.store_article(article_data)
         
-        logger.info(f"✅ Article {argos_id} ingested successfully")
+        logger.info(f"✅ Ingested: {argos_id}")
         return {
             "argos_id": argos_id,
             "status": "created",
-            "data": article_data
+            "reason": "new_article"
         }
     
     except HTTPException:
