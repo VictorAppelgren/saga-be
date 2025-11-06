@@ -34,6 +34,45 @@ def print_data(label, value):
     """Print data in a nice format"""
     print(f"  {label}: {value}")
 
+def debug_stats_files():
+    """Check what stats files exist via API"""
+    print_test("🔍 Debug: Stats Files Discovery")
+    
+    # Try to call the backend to list stats files
+    try:
+        r = requests.get(f"{BACKEND_URL}/api/admin/stats/debug/files")
+        if r.status_code == 200:
+            data = r.json()
+            print_data("Stats Directory", data.get("stats_dir"))
+            print_data("Files Found", len(data.get("files", [])))
+            if data.get("files"):
+                print(f"\n  📁 Available Stats Files:")
+                for f in data["files"]:
+                    print(f"    - {f}")
+                print(f"\n  📄 Newest File: {data['files'][-1]}")
+        else:
+            print(f"  ⚠️ Debug endpoint not available (status {r.status_code})")
+    except Exception as e:
+        print(f"  ⚠️ Debug endpoint error: {e}")
+
+
+def debug_latest_stats():
+    """Print the raw contents of the latest stats file"""
+    print_test("🔍 Debug: Latest Stats File Contents")
+    
+    try:
+        r = requests.get(f"{BACKEND_URL}/api/admin/stats/debug/latest")
+        if r.status_code == 200:
+            data = r.json()
+            print_data("File", data.get("file"))
+            print_data("File Size", f"{data.get('size', 0)} bytes")
+            print(f"\n  📊 Raw Stats Data:")
+            stats = data.get("stats", {})
+            print(f"    {json.dumps(stats, indent=4)}")
+        else:
+            print(f"  ⚠️ Debug endpoint not available (status {r.status_code})")
+    except Exception as e:
+        print(f"  ⚠️ Debug endpoint error: {e}")
 
 def print_trend(dates, values, label):
     """Print trend data in a visual format"""
@@ -328,4 +367,14 @@ def main():
 
 
 if __name__ == "__main__":
+    print_header("🧪 ADMIN API INTEGRATION TESTS")
+    
+    # ADD THESE DEBUG CALLS FIRST
+    debug_stats_files()
+    debug_latest_stats()
+    
+    # Health Checks
+    print_header("Health Checks")
+    test_health()
+    
     main()

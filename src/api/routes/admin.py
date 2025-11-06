@@ -233,3 +233,29 @@ def get_topic_details(topic_id: str):
         return response.json()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
+
+
+# ============================================================================
+# DEBUG ENDPOINTS (Development/Troubleshooting)
+# ============================================================================
+
+@router.get("/stats/debug/files")
+def debug_stats_files():
+    """Debug: List all stats files available in Graph API"""
+    try:
+        response = requests.get(f"{GRAPH_API_URL}/api/admin/stats/debug/files", timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
+
+
+@router.get("/stats/debug/latest")
+def debug_latest_stats():
+    """Debug: Show contents of latest stats file from Graph API"""
+    try:
+        response = requests.get(f"{GRAPH_API_URL}/api/admin/stats/debug/latest", timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
