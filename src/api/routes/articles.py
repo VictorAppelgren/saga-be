@@ -53,6 +53,38 @@ def create_article(article: ArticleCreate):
         raise HTTPException(status_code=500, detail=f"Storage error: {str(e)}")
 
 
+@router.get("/ids")
+def list_article_ids(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(10000, ge=1, le=50000)
+):
+    """
+    Get article IDs with simple pagination.
+    
+    Returns up to 'limit' IDs starting from 'offset'.
+    Set has_more=true if more IDs exist beyond this batch.
+    """
+    article_dir = Path("/app/saga-be/data/raw_news")
+    all_ids = []
+    
+    # Collect all IDs (sorted for consistency)
+    for date_dir in sorted(article_dir.glob("*")):
+        if date_dir.is_dir():
+            for article_file in sorted(date_dir.glob("*.json")):
+                all_ids.append(article_file.stem)
+    
+    # Paginate
+    total = len(all_ids)
+    paginated_ids = all_ids[offset:offset + limit]
+    
+    return {
+        "article_ids": paginated_ids,
+        "count": len(paginated_ids),
+        "offset": offset,
+        "has_more": (offset + len(paginated_ids)) < total
+    }
+
+
 @router.get("/{article_id}", response_model=ArticleResponse)
 def get_article(article_id: str):
     """Get article by ID"""
@@ -228,38 +260,6 @@ def ingest_article(article_data: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Ingest error: {e}")
         raise HTTPException(status_code=500, detail=f"Ingest error: {str(e)}")
-
-
-@router.get("/ids")
-def list_article_ids(
-    offset: int = Query(0, ge=0),
-    limit: int = Query(10000, ge=1, le=50000)
-):
-    """
-    Get article IDs with simple pagination.
-    
-    Returns up to 'limit' IDs starting from 'offset'.
-    Set has_more=true if more IDs exist beyond this batch.
-    """
-    article_dir = Path("/app/saga-be/data/raw_news")
-    all_ids = []
-    
-    # Collect all IDs (sorted for consistency)
-    for date_dir in sorted(article_dir.glob("*")):
-        if date_dir.is_dir():
-            for article_file in sorted(date_dir.glob("*.json")):
-                all_ids.append(article_file.stem)
-    
-    # Paginate
-    total = len(all_ids)
-    paginated_ids = all_ids[offset:offset + limit]
-    
-    return {
-        "article_ids": paginated_ids,
-        "count": len(paginated_ids),
-        "offset": offset,
-        "has_more": (offset + len(paginated_ids)) < total
-    }
 
 
 @router.post("/bulk")
