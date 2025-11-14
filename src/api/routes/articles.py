@@ -330,3 +330,20 @@ def bulk_import_articles(
         "errors": errors,
         "total": len(articles)
     }
+
+
+@router.get("/storage/stats")
+def get_storage_stats():
+    """
+    Get article storage statistics.
+    
+    Returns count of raw article JSON files in cold storage.
+    """
+    try:
+        total_articles = len(storage.article_ids)
+        return {
+            "total_raw_articles": total_articles
+        }
+    except Exception as e:
+        logger.error(f"Storage stats error: {e}")
+        raise HTTPException(status_code=500, detail=f"Storage stats error: {str(e)}")
