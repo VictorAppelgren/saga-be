@@ -270,7 +270,8 @@ def debug_latest_stats():
 @router.get("/stats/list")
 def list_stats_files():
     """List all master_stats JSON files for sync"""
-    stats_dir = Path("/app/graph-functions/master_stats")
+    # Stats are in the shared volume mounted at /app/saga-be/master_stats
+    stats_dir = Path("/app/saga-be/master_stats")
     if not stats_dir.exists():
         return {"files": []}
     files = sorted([f.name for f in stats_dir.glob("*.json")])
@@ -280,7 +281,7 @@ def list_stats_files():
 @router.get("/stats/download/{filename}")
 def download_stats_file(filename: str):
     """Download a specific stats file for sync"""
-    file_path = Path(f"/app/graph-functions/master_stats/{filename}")
+    file_path = Path(f"/app/saga-be/master_stats/{filename}")
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(file_path)
@@ -289,7 +290,7 @@ def download_stats_file(filename: str):
 @router.get("/logs/list")
 def list_log_files():
     """List all master_logs files for sync"""
-    logs_dir = Path("/app/graph-functions/master_logs")
+    logs_dir = Path("/app/saga-be/master_logs")
     if not logs_dir.exists():
         return {"files": []}
     files = sorted([f.name for f in logs_dir.glob("*.log")])
@@ -299,7 +300,7 @@ def list_log_files():
 @router.get("/logs/download/{filename}")
 def download_log_file(filename: str):
     """Download a specific log file for sync"""
-    file_path = Path(f"/app/graph-functions/master_logs/{filename}")
+    file_path = Path(f"/app/saga-be/master_logs/{filename}")
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(file_path)
