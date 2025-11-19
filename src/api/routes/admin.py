@@ -16,6 +16,49 @@ GRAPH_API_URL = os.getenv("GRAPH_API_URL", "http://saga-apis:8001")
 
 
 # ============================================================================
+# FILE SYNC ENDPOINTS (for local backup) - MUST BE BEFORE WILDCARD ROUTES!
+# ============================================================================
+
+@router.get("/stats/list")
+def list_stats_files():
+    """List all master_stats JSON files for sync"""
+    # Stats are in the shared volume mounted at /app/graph-functions/master_stats
+    stats_dir = Path("/app/graph-functions/master_stats")
+    if not stats_dir.exists():
+        return {"files": []}
+    files = sorted([f.name for f in stats_dir.glob("*.json")])
+    return {"files": files}
+
+
+@router.get("/stats/download/{filename}")
+def download_stats_file(filename: str):
+    """Download a specific stats file for sync"""
+    file_path = Path(f"/app/graph-functions/master_stats/{filename}")
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(file_path)
+
+
+@router.get("/logs/list")
+def list_log_files():
+    """List all master_logs files for sync"""
+    logs_dir = Path("/app/graph-functions/master_logs")
+    if not logs_dir.exists():
+        return {"files": []}
+    files = sorted([f.name for f in logs_dir.glob("*.log")])
+    return {"files": files}
+
+
+@router.get("/logs/download/{filename}")
+def download_log_file(filename: str):
+    """Download a specific log file for sync"""
+    file_path = Path(f"/app/graph-functions/master_logs/{filename}")
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(file_path)
+
+
+# ============================================================================
 # DAILY STATS ENDPOINTS
 # ============================================================================
 
@@ -261,46 +304,3 @@ def debug_latest_stats():
         return response.json()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
-
-
-# ============================================================================
-# FILE SYNC ENDPOINTS (for local backup)
-# ============================================================================
-
-@router.get("/stats/list")
-def list_stats_files():
-    """List all master_stats JSON files for sync"""
-    # Stats are in the shared volume mounted at /app/graph-functions/master_stats
-    stats_dir = Path("/app/graph-functions/master_stats")
-    if not stats_dir.exists():
-        return {"files": []}
-    files = sorted([f.name for f in stats_dir.glob("*.json")])
-    return {"files": files}
-
-
-@router.get("/stats/download/{filename}")
-def download_stats_file(filename: str):
-    """Download a specific stats file for sync"""
-    file_path = Path(f"/app/graph-functions/master_stats/{filename}")
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(file_path)
-
-
-@router.get("/logs/list")
-def list_log_files():
-    """List all master_logs files for sync"""
-    logs_dir = Path("/app/graph-functions/master_logs")
-    if not logs_dir.exists():
-        return {"files": []}
-    files = sorted([f.name for f in logs_dir.glob("*.log")])
-    return {"files": files}
-
-
-@router.get("/logs/download/{filename}")
-def download_log_file(filename: str):
-    """Download a specific log file for sync"""
-    file_path = Path(f"/app/graph-functions/master_logs/{filename}")
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(file_path)
