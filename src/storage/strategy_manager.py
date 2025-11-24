@@ -72,3 +72,60 @@ class StrategyStorageManager:
             json.dump(strategy, f, indent=2)
         
         return strategy_id
+    
+    def save_topics(self, username: str, strategy_id: str, topics: Dict) -> bool:
+        """Save topic mapping to strategy (simple field update)"""
+        strategy_path = self.users_dir / username / f"{strategy_id}.json"
+        if not strategy_path.exists():
+            return False
+        
+        with open(strategy_path, 'r') as f:
+            strategy = json.load(f)
+        
+        strategy["topics"] = {
+            "mapped_at": datetime.now().isoformat(),
+            **topics
+        }
+        strategy["updated_at"] = datetime.now().isoformat()
+        
+        with open(strategy_path, 'w') as f:
+            json.dump(strategy, f, indent=2)
+        
+        return True
+    
+    def get_topics(self, username: str, strategy_id: str) -> Optional[Dict]:
+        """Get topic mapping from strategy"""
+        strategy = self.get_strategy(username, strategy_id)
+        return strategy.get("topics") if strategy else None
+    
+    def save_analysis(self, username: str, strategy_id: str, analysis: Dict) -> bool:
+        """Save analysis results (updates latest + appends to history)"""
+        strategy_path = self.users_dir / username / f"{strategy_id}.json"
+        if not strategy_path.exists():
+            return False
+        
+        with open(strategy_path, 'r') as f:
+            strategy = json.load(f)
+        
+        # Add timestamp
+        analysis["analyzed_at"] = datetime.now().isoformat()
+        
+        # Update latest
+        strategy["latest_analysis"] = analysis
+        
+        # Append to history
+        if "analysis_history" not in strategy:
+            strategy["analysis_history"] = []
+        strategy["analysis_history"].append(analysis)
+        
+        strategy["updated_at"] = datetime.now().isoformat()
+        
+        with open(strategy_path, 'w') as f:
+            json.dump(strategy, f, indent=2)
+        
+        return True
+    
+    def get_latest_analysis(self, username: str, strategy_id: str) -> Optional[Dict]:
+        """Get latest analysis from strategy"""
+        strategy = self.get_strategy(username, strategy_id)
+        return strategy.get("latest_analysis") if strategy else None

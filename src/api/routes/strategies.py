@@ -64,3 +64,39 @@ def update_strategy(username: str, strategy_id: str, strategy: Dict[str, Any]):
     
     saved_id = storage.save_strategy(username, strategy)
     return storage.get_strategy(username, saved_id)
+
+
+@router.post("/users/{username}/strategies/{strategy_id}/topics")
+def save_strategy_topics(username: str, strategy_id: str, topics: Dict[str, Any]):
+    """Save topic mapping for strategy"""
+    success = storage.save_topics(username, strategy_id, topics)
+    if not success:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    return {"success": True, "topics": topics}
+
+
+@router.get("/users/{username}/strategies/{strategy_id}/topics")
+def get_strategy_topics(username: str, strategy_id: str):
+    """Get topic mapping for strategy"""
+    topics = storage.get_topics(username, strategy_id)
+    if topics is None:
+        raise HTTPException(status_code=404, detail="Strategy not found or no topics mapped")
+    return topics
+
+
+@router.post("/users/{username}/strategies/{strategy_id}/analysis")
+def save_strategy_analysis(username: str, strategy_id: str, analysis: Dict[str, Any]):
+    """Save analysis results (updates latest + appends to history)"""
+    success = storage.save_analysis(username, strategy_id, analysis)
+    if not success:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    return {"success": True, "analyzed_at": analysis.get("analyzed_at")}
+
+
+@router.get("/users/{username}/strategies/{strategy_id}/analysis")
+def get_latest_analysis(username: str, strategy_id: str):
+    """Get latest analysis for strategy"""
+    analysis = storage.get_latest_analysis(username, strategy_id)
+    if analysis is None:
+        raise HTTPException(status_code=404, detail="Strategy not found or no analysis available")
+    return analysis
