@@ -129,3 +129,20 @@ class StrategyStorageManager:
         """Get latest analysis from strategy"""
         strategy = self.get_strategy(username, strategy_id)
         return strategy.get("latest_analysis") if strategy else None
+    
+    def save_dashboard_question(self, username: str, strategy_id: str, question: str) -> bool:
+        """Save dashboard question to strategy (simple field update)"""
+        strategy_path = self.users_dir / username / f"{strategy_id}.json"
+        if not strategy_path.exists():
+            return False
+        
+        with open(strategy_path, 'r') as f:
+            strategy = json.load(f)
+        
+        strategy["dashboard_question"] = question
+        strategy["updated_at"] = datetime.now().isoformat()
+        
+        with open(strategy_path, 'w') as f:
+            json.dump(strategy, f, indent=2)
+        
+        return True

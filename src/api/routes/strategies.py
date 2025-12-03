@@ -100,3 +100,12 @@ def get_latest_analysis(username: str, strategy_id: str):
     if analysis is None:
         raise HTTPException(status_code=404, detail="Strategy not found or no analysis available")
     return analysis
+
+
+@router.post("/users/{username}/strategies/{strategy_id}/question")
+def save_dashboard_question(username: str, strategy_id: str, question: Dict[str, str]):
+    """Save dashboard question for strategy"""
+    success = storage.save_dashboard_question(username, strategy_id, question.get("question", ""))
+    if not success:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    return {"success": True, "question": question.get("question")}
