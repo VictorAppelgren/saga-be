@@ -45,6 +45,13 @@ def list_user_strategies(username: str):
     return {"strategies": strategies}
 
 
+@router.post("/users/{username}/strategies", response_model=StrategyResponse)
+def create_strategy(username: str, strategy: Dict[str, Any]):
+    """Create new strategy"""
+    strategy_data = storage.create_strategy(username, strategy)
+    return strategy_data
+
+
 @router.get("/users/{username}/strategies/{strategy_id}", response_model=StrategyResponse)
 def get_strategy(username: str, strategy_id: str):
     """Get full strategy"""
@@ -66,6 +73,15 @@ def update_strategy(username: str, strategy_id: str, strategy: Dict[str, Any]):
     
     saved_id = storage.save_strategy(username, strategy)
     return storage.get_strategy(username, saved_id)
+
+
+@router.delete("/users/{username}/strategies/{strategy_id}")
+def delete_strategy(username: str, strategy_id: str):
+    """Delete strategy (archives it)"""
+    success = storage.delete_strategy(username, strategy_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    return {"message": "Strategy archived", "strategy_id": strategy_id}
 
 
 @router.post("/users/{username}/strategies/{strategy_id}/topics")

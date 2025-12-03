@@ -80,13 +80,6 @@ class ChatRequest(BaseModel):
     strategy_id: Optional[str] = None
     username: Optional[str] = None
 
-class CreateStrategyRequest(BaseModel):
-    username: str
-    asset_primary: str
-    strategy_text: str
-    position_text: str = ""
-    target: str = ""
-
 
 # ============ AUTH & USERS ============
 @app.post("/api/login")
@@ -177,60 +170,20 @@ def get_interests(username: str = Query(...)):
 
 
 # ============ STRATEGIES ============
-@app.get("/api/strategies")
-def list_strategies(username: str = Query(...)):
-    """List user's strategies"""
-    strategies = strategy_manager.list_strategies(username)
-    return {"strategies": strategies}
-
-
-@app.get("/api/strategies/{strategy_id}")
-def get_strategy(strategy_id: str, username: str = Query(...)):
-    """Get strategy details"""
-    strategy = strategy_manager.get_strategy(username, strategy_id)
-    if not strategy:
-        raise HTTPException(status_code=404, detail="Strategy not found")
-    return strategy
-
-
-@app.post("/api/strategies")
-def create_strategy(request: CreateStrategyRequest):
-    """Create new strategy"""
-    strategy_data = {
-        "asset": {"primary": request.asset_primary},
-        "user_input": {
-            "strategy_text": request.strategy_text,
-            "position_text": request.position_text,
-            "target": request.target
-        }
-    }
-    
-    strategy = strategy_manager.create_strategy(request.username, strategy_data)
-    return strategy
-
-
-@app.put("/api/strategies/{strategy_id}")
-def update_strategy(strategy_id: str, strategy: Dict[str, Any]):
-    """Update strategy metadata"""
-    username = strategy.get("username")
-    if not username:
-        raise HTTPException(status_code=400, detail="username required")
-    
-    success = strategy_manager.update_strategy(username, strategy_id, strategy)
-    if not success:
-        raise HTTPException(status_code=404, detail="Strategy not found")
-    
-    return strategy_manager.get_strategy(username, strategy_id)
-
-
-@app.delete("/api/strategies/{strategy_id}")
-def delete_strategy(strategy_id: str, username: str = Query(...)):
-    """Archive strategy"""
-    success = strategy_manager.delete_strategy(username, strategy_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Strategy not found")
-    
-    return {"message": "Strategy archived", "strategy_id": strategy_id}
+# Strategy endpoints moved to src/api/routes/strategies.py
+# All strategy CRUD operations now use resource-based REST API:
+#   POST   /api/users/{username}/strategies                              # Create
+#   GET    /api/users/{username}/strategies                              # List
+#   GET    /api/users/{username}/strategies/{strategy_id}                # Get
+#   PUT    /api/users/{username}/strategies/{strategy_id}                # Update
+#   DELETE /api/users/{username}/strategies/{strategy_id}                # Delete (archive)
+#   POST   /api/users/{username}/strategies/{strategy_id}/topics         # Save topics
+#   GET    /api/users/{username}/strategies/{strategy_id}/topics         # Get topics
+#   POST   /api/users/{username}/strategies/{strategy_id}/analysis       # Save analysis
+#   GET    /api/users/{username}/strategies/{strategy_id}/analysis       # Get latest analysis
+#   GET    /api/users/{username}/strategies/{strategy_id}/analysis/history  # Get history
+#   POST   /api/users/{username}/strategies/{strategy_id}/question       # Save question
+#   GET    /api/users/{username}/strategies/{strategy_id}/question       # Get question
 
 
 # ============ REPORTS ============

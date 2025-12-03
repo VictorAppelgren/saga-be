@@ -144,21 +144,22 @@ def test_strategies(username):
     print_section("TEST 5: Strategies")
     
     # List strategies
-    r = requests.get(f"{BASE_URL}/strategies", params={"username": username})
-    print_result(f"GET /strategies?username={username}", r.status_code, r.json())
+    r = requests.get(f"{BASE_URL}/users/{username}/strategies")
+    print_result(f"GET /users/{username}/strategies", r.status_code, r.json())
     
     existing_strategies = r.json().get("strategies", [])
     print(f"   Found {len(existing_strategies)} existing strategies")
     
     # Create new strategy
-    r = requests.post(f"{BASE_URL}/strategies", json={
-        "username": username,
-        "asset_primary": "brent",
-        "strategy_text": "Bullish on Brent due to supply constraints",
-        "position_text": "Long 100 barrels @ $85",
-        "target": "$95"
+    r = requests.post(f"{BASE_URL}/users/{username}/strategies", json={
+        "asset": {"primary": "brent"},
+        "user_input": {
+            "strategy_text": "Bullish on Brent due to supply constraints",
+            "position_text": "Long 100 barrels @ $85",
+            "target": "$95"
+        }
     })
-    print_result("POST /strategies", r.status_code, r.json())
+    print_result(f"POST /users/{username}/strategies", r.status_code, r.json())
     
     if r.status_code == 200:
         new_strategy = r.json()
@@ -166,17 +167,17 @@ def test_strategies(username):
         print(f"   Created strategy: {strategy_id}")
         
         # Get strategy
-        r = requests.get(f"{BASE_URL}/strategies/{strategy_id}", params={"username": username})
-        print_result(f"GET /strategies/{strategy_id}", r.status_code)
+        r = requests.get(f"{BASE_URL}/users/{username}/strategies/{strategy_id}")
+        print_result(f"GET /users/{username}/strategies/{strategy_id}", r.status_code)
         
         # Update strategy
         new_strategy["user_input"]["target"] = "$100"
-        r = requests.put(f"{BASE_URL}/strategies/{strategy_id}", json=new_strategy)
-        print_result(f"PUT /strategies/{strategy_id}", r.status_code)
+        r = requests.put(f"{BASE_URL}/users/{username}/strategies/{strategy_id}", json=new_strategy)
+        print_result(f"PUT /users/{username}/strategies/{strategy_id}", r.status_code)
         
         # Delete strategy
-        r = requests.delete(f"{BASE_URL}/strategies/{strategy_id}", params={"username": username})
-        print_result(f"DELETE /strategies/{strategy_id}", r.status_code, r.json())
+        r = requests.delete(f"{BASE_URL}/users/{username}/strategies/{strategy_id}")
+        print_result(f"DELETE /users/{username}/strategies/{strategy_id}", r.status_code, r.json())
         
         return strategy_id
     
@@ -231,7 +232,7 @@ def test_chat(topic_id, username):
         print(f"   ⚠️  Error: {str(e)}")
     
     # Chat with strategy (if exists)
-    strategies_r = requests.get(f"{BASE_URL}/strategies", params={"username": username})
+    strategies_r = requests.get(f"{BASE_URL}/users/{username}/strategies")
     if strategies_r.status_code == 200:
         strategies = strategies_r.json().get("strategies", [])
         if strategies:
@@ -258,8 +259,8 @@ def test_error_handling():
     print_result("GET /api/articles/nonexistent123", r.status_code)
     
     # Non-existent strategy
-    r = requests.get(f"{BASE_URL}/strategies/nonexistent123", params={"username": "Victor"})
-    print_result("GET /strategies/nonexistent123", r.status_code)
+    r = requests.get(f"{BASE_URL}/users/Victor/strategies/nonexistent123")
+    print_result("GET /users/Victor/strategies/nonexistent123", r.status_code)
     
     # Invalid user
     r = requests.get(f"{BASE_URL}/interests", params={"username": "InvalidUser"})
