@@ -2,6 +2,7 @@
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
+from datetime import datetime
 
 from src.storage.strategy_manager import StrategyStorageManager
 
@@ -62,16 +63,44 @@ def get_strategy(username: str, strategy_id: str):
 
 
 @router.put("/users/{username}/strategies/{strategy_id}", response_model=StrategyResponse)
-def update_strategy(username: str, strategy_id: str, strategy: Dict[str, Any]):
-    """Update strategy"""
+def update_strategy(username: str, strategy_id: str, updates: Dict[str, Any]):
+    """
+    Update strategy user_input fields ONLY.
+    
+    SECURITY: This endpoint ONLY allows updating user-editable fields to prevent
+    accidental overwrites of system-generated data (analysis, dashboard_question, etc.)
+    
+    Allowed updates:
+    - user_input.strategy_text
+    - user_input.position_text  
+    - user_input.target
+    """
     existing = storage.get_strategy(username, strategy_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Strategy not found")
     
-    if strategy.get("id") != strategy_id:
-        raise HTTPException(status_code=400, detail="Strategy ID mismatch")
+    # WHITELIST: Only allow updating specific user_input fields
+    ALLOWED_FIELDS = {"strategy_text", "position_text", "target"}
     
-    saved_id = storage.save_strategy(username, strategy)
+    # Validate that updates only contain allowed fields
+    invalid_fields = set(updates.keys()) - ALLOWED_FIELDS
+    if invalid_fields:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Cannot update fields: {invalid_fields}. Use dedicated endpoints for analysis, topics, or questions."
+        )
+    
+    # Update only user_input fields
+    if "user_input" not in existing:
+        existing["user_input"] = {}
+    
+    for field in ALLOWED_FIELDS:
+        if field in updates:
+            existing["user_input"][field] = updates[field]
+    
+    existing["updated_at"] = datetime.now().isoformat()
+    
+    saved_id = storage.save_strategy(username, existing)
     return storage.get_strategy(username, saved_id)
 
 

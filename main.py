@@ -356,7 +356,6 @@ Deliver maximum insight density. Every word must earn its place."""
         llm = ChatAnthropic(
             model="claude-sonnet-4-20250514",
             temperature=0.2,
-            max_tokens=300,
             api_key=os.getenv("ANTHROPIC_API_KEY")
         )
         
