@@ -118,7 +118,7 @@ def list_strategies(username: str) -> List[Dict]:
                     "asset": strategy["asset"]["primary"],
                     "target": strategy["user_input"]["target"],
                     "updated_at": strategy["updated_at"],
-                    "has_analysis": strategy["analysis"]["generated_at"] is not None
+                    "has_analysis": strategy.get("latest_analysis", {}).get("analyzed_at") is not None
                 })
     
     # Sort by updated_at descending
@@ -155,15 +155,6 @@ def create_strategy(
             "strategy_text": strategy_text,
             "position_text": position_text,
             "target": target
-        },
-        "analysis": {
-            "generated_at": None,
-            "fundamental": "",
-            "current": "",
-            "risks": "",
-            "drivers": "",
-            "supporting_evidence": [],
-            "contradicting_evidence": []
         }
     }
     

@@ -196,67 +196,41 @@ def get_strategy(strategy_id: str, username: str = Query(...)):
 @app.post("/api/strategies")
 def create_strategy(request: CreateStrategyRequest):
     """Create new strategy"""
-    from datetime import datetime
-    
-    strategy_id = f"strategy_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    strategy = {
-        "id": strategy_id,
-        "created_at": datetime.now().isoformat(),
-        "updated_at": datetime.now().isoformat(),
-        "version": 1,
+    strategy_data = {
         "asset": {"primary": request.asset_primary},
         "user_input": {
             "strategy_text": request.strategy_text,
             "position_text": request.position_text,
             "target": request.target
-        },
-        "analysis": {"generated_at": None}
+        }
     }
     
-    strategy_manager.save_strategy(request.username, strategy)
+    strategy = strategy_manager.create_strategy(request.username, strategy_data)
     return strategy
 
 
 @app.put("/api/strategies/{strategy_id}")
 def update_strategy(strategy_id: str, strategy: Dict[str, Any]):
-    """Update strategy"""
+    """Update strategy metadata"""
     username = strategy.get("username")
     if not username:
         raise HTTPException(status_code=400, detail="username required")
     
-    existing = strategy_manager.get_strategy(username, strategy_id)
-    if not existing:
+    success = strategy_manager.update_strategy(username, strategy_id, strategy)
+    if not success:
         raise HTTPException(status_code=404, detail="Strategy not found")
     
-    from datetime import datetime
-    strategy["updated_at"] = datetime.now().isoformat()
-    strategy["version"] = existing.get("version", 1) + 1
-    
-    strategy_manager.save_strategy(username, strategy)
-    return strategy
+    return strategy_manager.get_strategy(username, strategy_id)
 
 
 @app.delete("/api/strategies/{strategy_id}")
 def delete_strategy(strategy_id: str, username: str = Query(...)):
     """Archive strategy"""
-    import shutil
-    from pathlib import Path
-    from datetime import datetime
-    
-    user_dir = Path("users") / username
-    strategy_path = user_dir / f"{strategy_id}.json"
-    
-    if not strategy_path.exists():
+    success = strategy_manager.delete_strategy(username, strategy_id)
+    if not success:
         raise HTTPException(status_code=404, detail="Strategy not found")
     
-    archive_dir = user_dir / "archive"
-    archive_dir.mkdir(exist_ok=True)
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    archive_path = archive_dir / f"{strategy_id}_{timestamp}.json"
-    shutil.move(str(strategy_path), str(archive_path))
-    
-    return {"message": "Strategy archived", "archived_as": archive_path.name}
+    return {"message": "Strategy archived", "strategy_id": strategy_id}
 
 
 # ============ REPORTS ============
@@ -354,13 +328,22 @@ def chat(request: ChatRequest):
                 context_parts.append("")
             
             # Add AI analysis if exists
-            if strategy_data.get('analysis', {}).get('generated_at'):
+            if strategy_data.get('latest_analysis', {}).get('analyzed_at'):
                 context_parts.append("═══ AI ANALYSIS ═══")
-                analysis = strategy_data['analysis']
-                if analysis.get('fundamental'):
-                    context_parts.append(f"Fundamental: {analysis['fundamental'][:250]}...")
-                if analysis.get('risks'):
-                    context_parts.append(f"Risks: {analysis['risks'][:200]}...")
+                analysis = strategy_data['latest_analysis']
+                
+                # Add executive summary
+                if analysis.get('final_analysis', {}).get('executive_summary'):
+                    context_parts.append(f"Executive Summary: {analysis['final_analysis']['executive_summary'][:250]}...")
+                
+                # Add risk summary
+                if analysis.get('risk_assessment', {}).get('key_risk_summary'):
+                    context_parts.append(f"Key Risks: {analysis['risk_assessment']['key_risk_summary'][:200]}...")
+                
+                # Add opportunity summary
+                if analysis.get('opportunity_assessment', {}).get('key_opportunity_summary'):
+                    context_parts.append(f"Key Opportunities: {analysis['opportunity_assessment']['key_opportunity_summary'][:200]}...")
+                
                 context_parts.append("")
         
         full_context = "\n".join(context_parts) if context_parts else ""

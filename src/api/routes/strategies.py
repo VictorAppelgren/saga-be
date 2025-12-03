@@ -25,7 +25,9 @@ class StrategyResponse(BaseModel):
     version: int
     asset: Dict[str, Any]
     user_input: Dict[str, str]
-    analysis: Dict[str, Any]
+    latest_analysis: Optional[Dict[str, Any]] = None
+    analysis_history: Optional[List[Dict[str, Any]]] = None
+    dashboard_question: Optional[str] = None
 
 
 # Routes
@@ -109,3 +111,21 @@ def save_dashboard_question(username: str, strategy_id: str, question: Dict[str,
     if not success:
         raise HTTPException(status_code=404, detail="Strategy not found")
     return {"success": True, "question": question.get("question")}
+
+
+@router.get("/users/{username}/strategies/{strategy_id}/question")
+def get_dashboard_question(username: str, strategy_id: str):
+    """Get dashboard question for strategy"""
+    question = storage.get_dashboard_question(username, strategy_id)
+    if question is None:
+        raise HTTPException(status_code=404, detail="Strategy not found or no question available")
+    return {"question": question}
+
+
+@router.get("/users/{username}/strategies/{strategy_id}/analysis/history")
+def get_analysis_history(username: str, strategy_id: str):
+    """Get all analysis history for strategy"""
+    history = storage.get_analysis_history(username, strategy_id)
+    if history is None:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    return {"history": history, "count": len(history)}
