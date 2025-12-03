@@ -205,8 +205,8 @@ def get_report(topic_id: str):
 @app.post("/api/chat")
 def chat(request: ChatRequest):
     """Chat - Backend handles ALL LLM logic with incredible prompt"""
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, AIMessage
+    from langchain_anthropic import ChatAnthropic
+    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
     
     try:
         # 1. Load strategy from files if provided
@@ -352,15 +352,17 @@ Question: "{request.message}"
 
 Deliver maximum insight density. Every word must earn its place."""
         
-        # 6. Call LLM (OpenAI)
-        llm = ChatOpenAI(
-            model="gpt-4o-mini",
+        # 6. Call LLM (Anthropic Claude)
+        llm = ChatAnthropic(
+            model="claude-sonnet-4-20250514",
             temperature=0.2,
             max_tokens=300,
-            api_key=os.getenv("OPENAI_API_KEY")
+            api_key=os.getenv("ANTHROPIC_API_KEY")
         )
         
-        response = llm.invoke(system_prompt)
+        # Claude requires system message to be separate
+        messages_with_system = [SystemMessage(content=system_prompt)] + messages
+        response = llm.invoke(messages_with_system)
         reply = response.content if hasattr(response, 'content') else str(response)
         
         return {
