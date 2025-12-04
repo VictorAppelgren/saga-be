@@ -42,8 +42,10 @@ async def track_stat(event_type: str, message: Optional[str] = None):
     
     # === MESSAGES: Append to plain text log ===
     if message:
-        timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
-        log_line = f"{timestamp} | {event_type} | {message}\n"
+        timestamp = datetime.utcnow().strftime("%H:%M:%S")
+        # Pad event_type to 30 chars for vertical alignment
+        event_padded = event_type.ljust(30)
+        log_line = f"{timestamp} | {event_padded} | {message}\n"
         
         with open(log_file, "a") as f:
             f.write(log_line)

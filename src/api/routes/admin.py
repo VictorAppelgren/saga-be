@@ -356,6 +356,38 @@ def get_analysis_trend(days: int = Query(10, le=90)) -> Dict:
     }
 
 
+@router.get("/trends/strategy-analysis")
+def get_strategy_analysis_trend(days: int = Query(10, le=90)) -> Dict:
+    """Get strategy analysis trends (custom user strategies)"""
+    dates = []
+    triggered = []
+    completed = []
+    
+    today = date.today()
+    
+    for i in range(days):
+        target_date = today - timedelta(days=i)
+        date_str = target_date.isoformat()
+        stats_file = STATS_DIR / f"stats_{date_str}.json"
+        
+        dates.insert(0, date_str)
+        
+        if stats_file.exists():
+            data = json.loads(stats_file.read_text())
+            events = data.get("events", {})
+            triggered.insert(0, events.get("strategy_analysis_triggered", 0))
+            completed.insert(0, events.get("strategy_analysis_completed", 0))
+        else:
+            triggered.insert(0, 0)
+            completed.insert(0, 0)
+    
+    return {
+        "dates": dates,
+        "triggered": triggered,
+        "completed": completed
+    }
+
+
 # ============================================================================
 # SUMMARY ENDPOINT (Dashboard Overview)
 # ============================================================================
@@ -405,6 +437,10 @@ def get_admin_summary() -> Dict:
             "triggered": events.get("agent_analysis_triggered", 0),
             "completed": events.get("agent_analysis_completed", 0),
             "sections": events.get("agent_section_written", 0)
+        },
+        "strategy_analysis": {
+            "triggered": events.get("strategy_analysis_triggered", 0),
+            "completed": events.get("strategy_analysis_completed", 0)
         },
         "graph_state": graph_state,
         "errors": events.get("error_occurred", 0)
