@@ -458,7 +458,7 @@ Deliver maximum insight density. Every word must earn its place."""
             }
         
         # NORMAL MODE: Call LLM
-        llm = ChatAnthropic(model="claude-3-5-sonnet-20241022", temperature=0.7)
+        llm = ChatAnthropic(model="claude-sonnet-4-5-20250929", temperature=0.7)
         messages_with_system = [SystemMessage(content=system_prompt)] + messages
         response = llm.invoke(messages_with_system)
         
