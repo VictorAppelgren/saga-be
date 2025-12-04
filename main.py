@@ -268,25 +268,35 @@ def chat(request: ChatRequest):
                         context_parts.append(content.strip())  # FULL content, no truncation
                 context_parts.append("")
             
-            # Add recent developments with FULL article content
+            # Add recent developments with FULL article content + SOURCE INFO
             articles = neo_context.get("articles", [])
             if articles:
                 context_parts.append("◆ RECENT DEVELOPMENTS (Full Articles):")
+                context_parts.append("")
                 for i, article in enumerate(articles[:10], 1):  # Top 10 articles
-                    context_parts.append(f"\n{i}. {article['title']}")
-                    context_parts.append(f"   Published: {article.get('published_at', 'N/A')}")
+                    # Format: [Article ID] Source - Title
+                    article_id = article.get('id', 'unknown')
+                    source = article.get('source', 'Unknown Source')
+                    title = article.get('title', 'Untitled')
+                    published = article.get('published_at', 'N/A')
+                    
+                    context_parts.append(f"[Article {i}] ({article_id})")
+                    context_parts.append(f"Source: {source}")
+                    context_parts.append(f"Title: {title}")
+                    context_parts.append(f"Published: {published}")
                     
                     # Include full content if available
                     if article.get('content'):
-                        context_parts.append(f"   Content: {article['content'][:1000]}...")  # First 1000 chars
+                        context_parts.append(f"Content: {article['content'][:1000]}...")  # First 1000 chars
                     elif article.get('summary'):
-                        context_parts.append(f"   Summary: {article['summary']}")
+                        context_parts.append(f"Summary: {article['summary']}")
                     
                     # Include LLM analysis from ABOUT relationship
                     if article.get('motivation'):
-                        context_parts.append(f"   Why Relevant: {article['motivation']}")
+                        context_parts.append(f"Why Relevant: {article['motivation']}")
                     if article.get('implications'):
-                        context_parts.append(f"   Implications: {article['implications']}")
+                        context_parts.append(f"Implications: {article['implications']}")
+                    context_parts.append("")  # Blank line between articles
                 context_parts.append("")
             
             # Add RELATED ASSETS with their executive summaries
@@ -412,11 +422,21 @@ def chat(request: ChatRequest):
         
         messages.append(HumanMessage(content=request.message))
         
-        # 5. THE INCREDIBLE PROMPT
-        system_prompt = f"""You are Saga, an elite financial intelligence analyst delivering razor-sharp insights.
+        # 5. THE WORLD-CLASS PROMPT
+        system_prompt = f"""You are Saga—the world's most elite financial intelligence analyst combining Ray Dalio's principles-based thinking, George Soros's reflexivity, and Renaissance Technologies' quantitative rigor.
 
 ═══ MISSION ═══
-Transform complex financial questions into concise, actionable intelligence. Maximum 150 words.
+Transform complex financial questions into concise, actionable intelligence with MAXIMUM INSIGHT DENSITY.
+Maximum 150 words. Every word must deliver alpha.
+
+═══ ELITE STANDARDS ═══
+Your analysis must reflect ELITE HEDGE FUND STANDARDS:
+- **Causal Chains**: Show explicit A→mechanism→B→impact transmission
+- **Cross-Domain Synthesis**: Connect macro→flows→microstructure→price
+- **Second-Order Thinking**: What happens AFTER the obvious move?
+- **Asymmetric Insight**: Where is consensus wrong? What's non-obvious?
+- **Quantified Precision**: Exact levels, probabilities, timeframes with sources
+- **Citation Discipline**: Every fact needs source (Article X)
 
 ═══ CONTEXT TYPE ═══
 {context_type}
@@ -424,24 +444,34 @@ Transform complex financial questions into concise, actionable intelligence. Max
 {full_context}
 
 ═══ RESPONSE FRAMEWORK ═══
-**Answer:** [Direct 2-3 sentence response]
+**Answer:** [Direct 2-3 sentence response with causal chain]
 
-**Key Insight:** [Most critical non-obvious factor]
+**Key Insight:** [Most critical NON-OBVIOUS factor with transmission mechanism]
 
-**Risk/Opportunity:** [What could go wrong/right]
+**Risk/Opportunity:** [What could go wrong/right with probability and levels]
 
 **Next:** [Strategic question to advance discussion]
 
-═══ RULES ═══
-• BREVITY IS INTELLIGENCE: Max 150 words total
-• SPECIFICITY: Use exact numbers, dates, probabilities
-• Contrarian Edge: Challenge consensus where evidence supports
-• ACTIONABLE ONLY: Every sentence drives decisions
-• CONVERSATION LEADERSHIP: End with strategic question
+═══ WORLD-CLASS RULES ═══
+• **BREVITY IS INTELLIGENCE**: Max 150 words total
+• **CAUSAL CHAINS**: Never say "X affects Y"—show "X→mechanism→Y at level"
+• **CITE ALL SOURCES**: Every factual claim MUST reference specific article
+  - Format: "According to [Source] (Article X): [Fact]"
+  - Example: "According to Bloomberg (Article 3): PJM queues 48 months→delays 18-24 months→capacity gap"
+  - If no article supports claim, say "No recent coverage found"
+  - NEVER make unsourced claims about specific numbers, dates, or events
+• **QUANTIFIED PRECISION**: Use exact numbers, probabilities, timeframes FROM SOURCES ONLY
+  - Ban: "significant", "substantial", "considerable", "might", "could"
+  - Use: "60% probability", "$50B flows", "next 2-3 weeks", "target 1.05"
+• **SECOND-ORDER THINKING**: Show "then what?"—identify feedback loops, compounding effects
+• **ASYMMETRIC INSIGHT**: Challenge consensus where evidence supports (positioning extremes, contrarian data)
+• **CROSS-DOMAIN SYNTHESIS**: Connect distant domains for superior insights
+• **ACTIONABLE ONLY**: Every sentence drives investment decisions
+• **CONVERSATION LEADERSHIP**: End with strategic question that deepens analysis
 
 Question: "{request.message}"
 
-Deliver maximum insight density. Every word must earn its place."""
+Deliver maximum insight density. Every word must earn its place. Show transmission mechanisms. Challenge consensus with evidence."""
         
         # 6. Call LLM (or return context if test mode)
         if request.test:
