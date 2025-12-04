@@ -22,3 +22,6 @@ __pycache__/
 **/*.cpython-*.pyc
 *.egg-info/
 *.egg
+
+master_stats/
+master_logs/
