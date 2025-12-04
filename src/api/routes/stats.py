@@ -9,8 +9,8 @@ router = APIRouter(prefix="/api/stats", tags=["statistics"])
 # Storage directories
 STATS_DIR = Path("stats/stats")
 LOGS_DIR = Path("stats/logs")
-STATS_DIR.mkdir(exist_ok=True)
-LOGS_DIR.mkdir(exist_ok=True)
+STATS_DIR.mkdir(parents=True, exist_ok=True)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/track")
