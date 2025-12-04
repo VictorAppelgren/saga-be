@@ -80,6 +80,7 @@ class ChatRequest(BaseModel):
     topic_id: Optional[str] = None
     strategy_id: Optional[str] = None
     username: Optional[str] = None
+    test: bool = False  # If True, return full context for debugging
 
 
 # ============ AUTH & USERS ============
@@ -217,14 +218,20 @@ def chat(request: ChatRequest):
             if not strategy_data:
                 raise HTTPException(status_code=404, detail="Strategy not found")
         
-        # 2. Get Neo4j context from Graph API
+        # 2. Get EXCEPTIONAL Neo4j context from Graph API
         neo_context = None
         if request.topic_id:
             try:
+                # Request FULL context with related topics
                 response = requests.post(
                     f"{GRAPH_API_URL}/neo/build-context",
-                    json={"topic_id": request.topic_id},
-                    timeout=10
+                    json={
+                        "topic_id": request.topic_id,
+                        "include_full_articles": True,  # Get full article content
+                        "include_related_topics": True,  # Get related assets
+                        "max_articles": 15  # More articles for better context
+                    },
+                    timeout=15
                 )
                 response.raise_for_status()
                 neo_context = response.json()
@@ -232,42 +239,75 @@ def chat(request: ChatRequest):
                 print(f"Graph API context unavailable: {e}")
                 # Continue without Neo4j context
         
-        # 3. Build INCREDIBLE context
+        # 3. Build EXCEPTIONAL context
         context_parts = []
         
-        # PART 1: Market Intelligence from Neo4j
+        # PART 1: Market Intelligence from Neo4j (FULL CONTENT)
         if neo_context and neo_context.get("topic_name"):
-            context_parts.append("═══ MARKET INTELLIGENCE ═══")
+            context_parts.append("═══ PRIMARY ASSET INTELLIGENCE ═══")
             context_parts.append(f"Asset: {neo_context['topic_name']}")
             context_parts.append("")
             
-            # Add recent developments
-            articles = neo_context.get("articles", [])
-            if articles:
-                context_parts.append("◆ RECENT DEVELOPMENTS:")
-                for i, article in enumerate(articles[:5], 1):
-                    context_parts.append(f"{i}. {article['title']}")
-                    if article.get('summary'):
-                        context_parts.append(f"   {article['summary'][:200]}...")
-                context_parts.append("")
-            
-            # Add analysis reports
+            # Add FULL analysis reports (all sections)
             reports = neo_context.get("reports", {})
             if reports:
-                context_parts.append("【ANALYSIS REPORTS】")
-                for section, content in list(reports.items())[:2]:  # Top 2 sections
+                context_parts.append("【COMPLETE ANALYSIS】")
+                # Include ALL key sections, not truncated
+                priority_sections = [
+                    "executive_summary",
+                    "market_dynamics",
+                    "risk_factors",
+                    "opportunity_assessment",
+                    "recent_developments"
+                ]
+                for section in priority_sections:
+                    content = reports.get(section, "")
                     if content and content.strip():
                         section_title = section.replace('_', ' ').title()
-                        content_preview = content.strip()[:400]
                         context_parts.append(f"\n{section_title}:")
-                        context_parts.append(content_preview + "...")
+                        context_parts.append(content.strip())  # FULL content, no truncation
+                context_parts.append("")
+            
+            # Add recent developments with FULL article content
+            articles = neo_context.get("articles", [])
+            if articles:
+                context_parts.append("◆ RECENT DEVELOPMENTS (Full Articles):")
+                for i, article in enumerate(articles[:10], 1):  # Top 10 articles
+                    context_parts.append(f"\n{i}. {article['title']}")
+                    context_parts.append(f"   Published: {article.get('published_at', 'N/A')}")
+                    
+                    # Include full content if available
+                    if article.get('content'):
+                        context_parts.append(f"   Content: {article['content'][:1000]}...")  # First 1000 chars
+                    elif article.get('summary'):
+                        context_parts.append(f"   Summary: {article['summary']}")
+                    
+                    # Include LLM analysis from ABOUT relationship
+                    if article.get('motivation'):
+                        context_parts.append(f"   Why Relevant: {article['motivation']}")
+                    if article.get('implications'):
+                        context_parts.append(f"   Implications: {article['implications']}")
+                context_parts.append("")
+            
+            # Add RELATED ASSETS with their executive summaries
+            related_topics = neo_context.get("related_topics", [])
+            if related_topics:
+                context_parts.append("【RELATED ASSETS】")
+                for rel in related_topics:
+                    context_parts.append(f"\n• {rel['name']} ({rel['relationship']})")
+                    context_parts.append(f"  {rel['executive_summary']}")
                 context_parts.append("")
         
-        # PART 2: User's Trading Strategy
+        # PART 2: User's Trading Strategy (FULL CONTEXT)
         if strategy_data:
             context_parts.append("═══ USER'S TRADING STRATEGY ═══")
-            context_parts.append(f"Asset: {strategy_data['asset']['primary']}")
+            context_parts.append(f"Primary Asset: {strategy_data['asset']['primary']}")
+            
+            # Add related assets from strategy
+            if strategy_data['asset'].get('related'):
+                context_parts.append(f"Related Assets: {', '.join(strategy_data['asset']['related'])}")
             context_parts.append("")
+            
             context_parts.append("USER'S THESIS:")
             context_parts.append(strategy_data['user_input']['strategy_text'])
             context_parts.append("")
@@ -281,24 +321,74 @@ def chat(request: ChatRequest):
                 context_parts.append(f"TARGET: {strategy_data['user_input']['target']}")
                 context_parts.append("")
             
-            # Add AI analysis if exists
+            # Add COMPLETE AI analysis (not truncated)
             if strategy_data.get('latest_analysis', {}).get('analyzed_at'):
-                context_parts.append("═══ AI ANALYSIS ═══")
+                context_parts.append("═══ COMPLETE AI ANALYSIS ═══")
                 analysis = strategy_data['latest_analysis']
                 
-                # Add executive summary
+                # Add FULL executive summary
                 if analysis.get('final_analysis', {}).get('executive_summary'):
-                    context_parts.append(f"Executive Summary: {analysis['final_analysis']['executive_summary'][:250]}...")
+                    context_parts.append(f"Executive Summary:\n{analysis['final_analysis']['executive_summary']}")
+                    context_parts.append("")
                 
-                # Add risk summary
+                # Add FULL risk assessment
                 if analysis.get('risk_assessment', {}).get('key_risk_summary'):
-                    context_parts.append(f"Key Risks: {analysis['risk_assessment']['key_risk_summary'][:200]}...")
+                    context_parts.append(f"Key Risks:\n{analysis['risk_assessment']['key_risk_summary']}")
+                    context_parts.append("")
                 
-                # Add opportunity summary
+                # Add FULL opportunity assessment
                 if analysis.get('opportunity_assessment', {}).get('key_opportunity_summary'):
-                    context_parts.append(f"Key Opportunities: {analysis['opportunity_assessment']['key_opportunity_summary'][:200]}...")
+                    context_parts.append(f"Key Opportunities:\n{analysis['opportunity_assessment']['key_opportunity_summary']}")
+                    context_parts.append("")
                 
+                # Add mapped topics from strategy analysis
+                if analysis.get('topic_mapping', {}).get('primary_topics'):
+                    primary = analysis['topic_mapping']['primary_topics']
+                    context_parts.append(f"Primary Topics: {', '.join(primary)}")
+                if analysis.get('topic_mapping', {}).get('driver_topics'):
+                    drivers = analysis['topic_mapping']['driver_topics']
+                    context_parts.append(f"Driver Topics: {', '.join(drivers)}")
                 context_parts.append("")
+                
+                # Get executive summaries for strategy-related topics
+                try:
+                    all_topics = []
+                    if analysis.get('topic_mapping', {}).get('primary_topics'):
+                        all_topics.extend(analysis['topic_mapping']['primary_topics'])
+                    if analysis.get('topic_mapping', {}).get('driver_topics'):
+                        all_topics.extend(analysis['topic_mapping']['driver_topics'])
+                    
+                    if all_topics:
+                        context_parts.append("【STRATEGY-RELATED ASSETS】")
+                        for topic_name in all_topics[:5]:  # Top 5
+                            # Try to get executive summary for this topic
+                            try:
+                                # Find topic ID by name
+                                topic_search = requests.get(
+                                    f"{GRAPH_API_URL}/neo/topics/all",
+                                    timeout=5
+                                )
+                                if topic_search.status_code == 200:
+                                    topics = topic_search.json().get("topics", [])
+                                    matching_topic = next((t for t in topics if t["name"].lower() == topic_name.lower()), None)
+                                    if matching_topic:
+                                        # Get executive summary
+                                        topic_context = requests.post(
+                                            f"{GRAPH_API_URL}/neo/build-context",
+                                            json={"topic_id": matching_topic["id"]},
+                                            timeout=5
+                                        )
+                                        if topic_context.status_code == 200:
+                                            topic_data = topic_context.json()
+                                            exec_summary = topic_data.get("reports", {}).get("executive_summary", "")
+                                            if exec_summary:
+                                                context_parts.append(f"\n• {topic_name}:")
+                                                context_parts.append(f"  {exec_summary[:500]}...")  # First 500 chars
+                            except:
+                                pass  # Skip if can't fetch
+                        context_parts.append("")
+                except:
+                    pass  # Skip if error
         
         full_context = "\n".join(context_parts) if context_parts else ""
         
@@ -323,7 +413,7 @@ def chat(request: ChatRequest):
         messages.append(HumanMessage(content=request.message))
         
         # 5. THE INCREDIBLE PROMPT
-        system_prompt = f"""You are Argos, an elite financial intelligence analyst delivering razor-sharp insights.
+        system_prompt = f"""You are Saga, an elite financial intelligence analyst delivering razor-sharp insights.
 
 ═══ MISSION ═══
 Transform complex financial questions into concise, actionable intelligence. Maximum 150 words.
@@ -353,23 +443,26 @@ Question: "{request.message}"
 
 Deliver maximum insight density. Every word must earn its place."""
         
-        # 6. Call LLM (Anthropic Claude)
-        llm = ChatAnthropic(
-            model="claude-sonnet-4-20250514",
-            temperature=0.2,
-            api_key=os.getenv("ANTHROPIC_API_KEY")
-        )
+        # 6. Call LLM (or return context if test mode)
+        if request.test:
+            # TEST MODE: Return full context for debugging
+            return {
+                "test_mode": True,
+                "context_type": context_type,
+                "system_prompt": system_prompt,
+                "full_context": full_context,
+                "context_size_chars": len(full_context),
+                "context_size_tokens": len(full_context) // 4,  # Rough estimate
+                "message": request.message,
+                "history_length": len(request.history)
+            }
         
-        # Claude requires system message to be separate
+        # NORMAL MODE: Call LLM
+        llm = ChatAnthropic(model="claude-3-5-sonnet-20241022", temperature=0.7)
         messages_with_system = [SystemMessage(content=system_prompt)] + messages
         response = llm.invoke(messages_with_system)
-        reply = response.content if hasattr(response, 'content') else str(response)
         
-        return {
-            "response": reply.strip(),
-            "topic_id": request.topic_id,
-            "strategy_id": request.strategy_id
-        }
+        return {"response": response.content}
         
     except HTTPException:
         raise
