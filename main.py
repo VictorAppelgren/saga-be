@@ -28,7 +28,7 @@ from src.storage.article_manager import ArticleStorageManager
 from src.storage.strategy_manager import StrategyStorageManager
 
 # Import API routers
-from src.api.routes import articles, admin, strategies
+from src.api.routes import articles, admin, strategies, stats
 
 # Initialize managers
 user_manager = UserManager()
@@ -67,6 +67,7 @@ async def log_requests(request: Request, call_next):
 app.include_router(articles.router)
 app.include_router(admin.router)
 app.include_router(strategies.router)
+app.include_router(stats.router)
 
 # Models
 class LoginRequest(BaseModel):
