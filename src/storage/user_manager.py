@@ -51,7 +51,7 @@ class UserManager:
         """Validate API key"""
         return api_key == expected_key
     
-    def ensure_user_directories(self, base_path: str = "data/users"):
+    def ensure_user_directories(self, base_path: str = "users"):
         """Ensure all users from users.json have directories"""
         users_data = self._load_users()
         base_dir = Path(base_path)
