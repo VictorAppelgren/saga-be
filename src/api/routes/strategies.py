@@ -215,3 +215,28 @@ def get_analysis_history(username: str, strategy_id: str):
     if history is None:
         raise HTTPException(status_code=404, detail="Strategy not found")
     return {"history": history, "count": len(history)}
+
+
+@router.post("/users/{username}/strategies/{strategy_id}/set-default")
+def set_strategy_default(username: str, strategy_id: str, is_default: bool):
+    """Toggle is_default flag (Victor only). When set to true, copies to all users."""
+    # Only Victor can set default strategies
+    if username != "victor":
+        raise HTTPException(status_code=403, detail="Only Victor can set default strategies")
+    
+    strategy = storage.get_strategy(username, strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    
+    # Update the flag
+    strategy["is_default"] = is_default
+    
+    # Save (will auto-copy to all users if is_default=True)
+    storage.save_strategy(username, strategy)
+    
+    return {
+        "success": True,
+        "strategy_id": strategy_id,
+        "is_default": is_default,
+        "message": f"Strategy {'is now a default example' if is_default else 'is no longer default'}"
+    }
