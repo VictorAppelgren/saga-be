@@ -1,13 +1,31 @@
 """Strategy API Routes"""
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, BackgroundTasks
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import os
+import requests
 
 from src.storage.strategy_manager import StrategyStorageManager
 
+# Graph API URL for triggering analysis
+GRAPH_API_URL = os.getenv("GRAPH_API_URL", "http://localhost:8001")
+
 router = APIRouter(prefix="/api", tags=["strategies"])
 storage = StrategyStorageManager()
+
+
+# Helper function to trigger analysis
+def trigger_strategy_analysis(username: str, strategy_id: str):
+    """Trigger strategy analysis in background (non-blocking)"""
+    try:
+        requests.post(
+            f"{GRAPH_API_URL}/trigger/strategy-analysis",
+            json={"username": username, "strategy_id": strategy_id},
+            timeout=2
+        )
+    except Exception as e:
+        print(f"⚠️  Failed to trigger analysis for {username}/{strategy_id}: {e}")
 
 
 # Models
@@ -17,6 +35,8 @@ class StrategyListItem(BaseModel):
     target: str
     updated_at: str
     has_analysis: bool
+    last_analyzed_at: Optional[str] = None
+    is_default: bool = False
 
 
 class StrategyResponse(BaseModel):
@@ -47,9 +67,13 @@ def list_user_strategies(username: str):
 
 
 @router.post("/users/{username}/strategies", response_model=StrategyResponse)
-def create_strategy(username: str, strategy: Dict[str, Any]):
+def create_strategy(username: str, strategy: Dict[str, Any], background_tasks: BackgroundTasks):
     """Create new strategy"""
     strategy_data = storage.create_strategy(username, strategy)
+    
+    # Trigger analysis in background
+    background_tasks.add_task(trigger_strategy_analysis, username, strategy_data["id"])
+    
     return strategy_data
 
 
@@ -63,7 +87,7 @@ def get_strategy(username: str, strategy_id: str):
 
 
 @router.put("/users/{username}/strategies/{strategy_id}", response_model=StrategyResponse)
-def update_strategy(username: str, strategy_id: str, updates: Dict[str, Any]):
+def update_strategy(username: str, strategy_id: str, updates: Dict[str, Any], background_tasks: BackgroundTasks):
     """
     Update strategy user_input fields ONLY.
     
@@ -78,6 +102,10 @@ def update_strategy(username: str, strategy_id: str, updates: Dict[str, Any]):
     existing = storage.get_strategy(username, strategy_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Strategy not found")
+    
+    # PREVENT editing default strategies
+    if existing.get("is_default", False):
+        raise HTTPException(status_code=403, detail="Cannot edit default strategies")
     
     # WHITELIST: Only allow updating specific user_input fields
     ALLOWED_FIELDS = {"strategy_text", "position_text", "target"}
@@ -101,16 +129,29 @@ def update_strategy(username: str, strategy_id: str, updates: Dict[str, Any]):
     existing["updated_at"] = datetime.now().isoformat()
     
     saved_id = storage.save_strategy(username, existing)
+    
+    # Trigger analysis in background
+    background_tasks.add_task(trigger_strategy_analysis, username, saved_id)
+    
     return storage.get_strategy(username, saved_id)
 
 
 @router.delete("/users/{username}/strategies/{strategy_id}")
 def delete_strategy(username: str, strategy_id: str):
-    """Delete strategy (archives it)"""
+    """Delete strategy (moves to archive)"""
+    # Check if strategy exists and is not default
+    existing = storage.get_strategy(username, strategy_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    
+    # PREVENT deleting default strategies
+    if existing.get("is_default", False):
+        raise HTTPException(status_code=403, detail="Cannot delete default strategies")
+    
     success = storage.delete_strategy(username, strategy_id)
     if not success:
         raise HTTPException(status_code=404, detail="Strategy not found")
-    return {"message": "Strategy archived", "strategy_id": strategy_id}
+    return {"ok": True}
 
 
 @router.post("/users/{username}/strategies/{strategy_id}/topics")

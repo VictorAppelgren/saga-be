@@ -34,7 +34,9 @@ class StrategyStorageManager:
                         "asset": strategy["asset"]["primary"],
                         "target": strategy["user_input"]["target"],
                         "updated_at": strategy["updated_at"],
-                        "has_analysis": strategy.get("latest_analysis", {}).get("analyzed_at") is not None
+                        "has_analysis": strategy.get("latest_analysis", {}).get("analyzed_at") is not None,
+                        "last_analyzed_at": strategy.get("latest_analysis", {}).get("analyzed_at"),
+                        "is_default": strategy.get("is_default", False)
                     })
             except Exception:
                 continue
@@ -50,7 +52,7 @@ class StrategyStorageManager:
             return json.load(f)
     
     def save_strategy(self, username: str, strategy: Dict) -> str:
-        """Save strategy (archives old version)"""
+        """Save strategy (archives old version). If is_default=True, copies to all users."""
         user_dir = self.users_dir / username
         archive_dir = user_dir / "archive"
         os.makedirs(archive_dir, exist_ok=True)
@@ -70,6 +72,22 @@ class StrategyStorageManager:
         # Save new
         with open(strategy_path, 'w') as f:
             json.dump(strategy, f, indent=2)
+        
+        # If this is a default strategy, copy to all other users
+        if strategy.get("is_default", False):
+            all_users = self.list_users()
+            for other_user in all_users:
+                if other_user != username:
+                    other_user_dir = self.users_dir / other_user
+                    other_user_dir.mkdir(parents=True, exist_ok=True)
+                    other_strategy_path = other_user_dir / f"{strategy_id}.json"
+                    
+                    # Copy the strategy
+                    strategy_copy = strategy.copy()
+                    strategy_copy["updated_at"] = datetime.now().isoformat()
+                    
+                    with open(other_strategy_path, 'w') as f:
+                        json.dump(strategy_copy, f, indent=2)
         
         return strategy_id
     
@@ -171,6 +189,10 @@ class StrategyStorageManager:
         strategy_data["created_at"] = now
         strategy_data["updated_at"] = now
         strategy_data["version"] = 1
+        
+        # Ensure is_default is set (default to False for user-created strategies)
+        if "is_default" not in strategy_data:
+            strategy_data["is_default"] = False
         
         # Save
         self.save_strategy(username, strategy_data)
