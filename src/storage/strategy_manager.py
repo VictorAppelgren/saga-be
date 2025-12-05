@@ -9,7 +9,7 @@ from datetime import datetime
 class StrategyStorageManager:
     """Manages file-based strategy storage in data/users/"""
     
-    def __init__(self, users_dir: str = "users"):
+    def __init__(self, users_dir: str = "data/users"):
         self.users_dir = Path(users_dir)
     
     def list_users(self) -> List[str]:
