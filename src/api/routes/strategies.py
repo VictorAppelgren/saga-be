@@ -221,7 +221,7 @@ def get_analysis_history(username: str, strategy_id: str):
 
 @router.post("/users/{username}/strategies/{strategy_id}/set-default/{is_default}")
 def set_strategy_default(username: str, strategy_id: str, is_default: bool):
-    """Toggle is_default flag (Admin only). When set to true, copies to all users."""
+    """Toggle is_default flag (Admin only). When set to true, copies to all users. When false, removes from all users."""
     # Only admins can set default strategies
     user = user_manager.get_user(username)
     if not user or not user.get("is_admin", False):
@@ -234,12 +234,20 @@ def set_strategy_default(username: str, strategy_id: str, is_default: bool):
     # Update the flag
     strategy["is_default"] = is_default
     
-    # Save (will auto-copy to all users if is_default=True)
-    storage.save_strategy(username, strategy)
+    if is_default:
+        # Save (will auto-copy to all users)
+        storage.save_strategy(username, strategy)
+        message = "Strategy is now a default example and copied to all users"
+    else:
+        # Save locally first
+        storage.save_strategy(username, strategy)
+        # Delete from all other users
+        storage.delete_strategy_from_all_users(strategy_id, username)
+        message = "Strategy is no longer default and removed from all users"
     
     return {
         "success": True,
         "strategy_id": strategy_id,
         "is_default": is_default,
-        "message": f"Strategy {'is now a default example' if is_default else 'is no longer default'}"
+        "message": message
     }

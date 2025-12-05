@@ -170,6 +170,16 @@ class StrategyStorageManager:
         strategy = self.get_strategy(username, strategy_id)
         return strategy.get("dashboard_question") if strategy else None
     
+    def delete_strategy_from_all_users(self, strategy_id: str, except_username: str) -> None:
+        """Delete a strategy from all users except the specified one"""
+        all_users = self.list_users()
+        for other_user in all_users:
+            if other_user != except_username:
+                other_user_dir = self.users_dir / other_user
+                other_strategy_path = other_user_dir / f"{strategy_id}.json"
+                if other_strategy_path.exists():
+                    other_strategy_path.unlink()  # Delete the file
+    
     def get_analysis_history(self, username: str, strategy_id: str) -> List[Dict]:
         """Get all analysis history from strategy"""
         strategy = self.get_strategy(username, strategy_id)
