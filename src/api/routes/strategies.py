@@ -7,12 +7,14 @@ import os
 import requests
 
 from src.storage.strategy_manager import StrategyStorageManager
+from src.storage.user_manager import UserManager
 
 # Graph API URL for triggering analysis
 GRAPH_API_URL = os.getenv("GRAPH_API_URL", "http://localhost:8001")
 
 router = APIRouter(prefix="/api", tags=["strategies"])
 storage = StrategyStorageManager()
+user_manager = UserManager()
 
 
 # Helper function to trigger analysis
@@ -219,10 +221,11 @@ def get_analysis_history(username: str, strategy_id: str):
 
 @router.post("/users/{username}/strategies/{strategy_id}/set-default")
 def set_strategy_default(username: str, strategy_id: str, is_default: bool):
-    """Toggle is_default flag (Victor only). When set to true, copies to all users."""
-    # Only Victor can set default strategies
-    if username != "victor":
-        raise HTTPException(status_code=403, detail="Only Victor can set default strategies")
+    """Toggle is_default flag (Admin only). When set to true, copies to all users."""
+    # Only admins can set default strategies
+    user = user_manager.get_user_by_username(username)
+    if not user or not user.get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Only admins can set default strategies")
     
     strategy = storage.get_strategy(username, strategy_id)
     if not strategy:
