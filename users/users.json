@@ -11,7 +11,10 @@
         "copper",
         "fed_policy",
         "ecb_policy",
-        "euribor"
+        "euribor",
+        "euro_inflation",
+        "boj_policy",
+        "bund10y"
       ]
     },
     {
@@ -25,6 +28,64 @@
         "boj_policy",
         "bund10y",
         "copper"
+      ]
+    },
+    {
+      "username": "Charlotte",
+      "password": "c789",
+      "is_admin": false,
+      "accessible_topics": [
+        "brent",
+        "eurusd",
+        "dxy",
+        "copper",
+        "fed_policy",
+        "ecb_policy",
+        "euribor",
+        "euro_inflation",
+        "boj_policy",
+        "bund10y"
+      ]
+    },
+    {
+      "username": "Claes",
+      "password": "cl123",
+      "is_admin": false,
+      "accessible_topics": [
+        "brent",
+        "eurusd",
+        "dxy",
+        "copper",
+        "fed_policy",
+        "ecb_policy",
+        "euribor",
+        "euro_inflation",
+        "boj_policy",
+        "bund10y"
+      ]
+    },
+    {
+      "username": "Simon",
+      "password": "s234",
+      "is_admin": false,
+      "accessible_topics": [
+        "brent",
+        "eurusd",
+        "dxy",
+        "copper",
+        "fed_policy",
+        "ecb_policy",
+        "euribor"
+      ]
+    },
+    {
+      "username": "Fredrik",
+      "password": "f345",
+      "is_admin": false,
+      "accessible_topics": [
+        "brent",
+        "eurusd",
+        "fed_policy"
       ]
     }
   ]
