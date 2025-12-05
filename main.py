@@ -69,6 +69,12 @@ app.include_router(admin.router)
 app.include_router(strategies.router)
 app.include_router(stats.router)
 
+# Startup: Ensure all users have directories
+@app.on_event("startup")
+async def startup_event():
+    """Ensure all users from users.json have directories"""
+    user_manager.ensure_user_directories()
+
 # Models
 class LoginRequest(BaseModel):
     username: str

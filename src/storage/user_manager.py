@@ -50,3 +50,15 @@ class UserManager:
     def validate_api_key(self, api_key: str, expected_key: str) -> bool:
         """Validate API key"""
         return api_key == expected_key
+    
+    def ensure_user_directories(self, base_path: str = "data/users"):
+        """Ensure all users from users.json have directories"""
+        users_data = self._load_users()
+        base_dir = Path(base_path)
+        base_dir.mkdir(parents=True, exist_ok=True)
+        
+        for user in users_data.get("users", []):
+            username = user.get("username")
+            if username:
+                user_dir = base_dir / username
+                user_dir.mkdir(parents=True, exist_ok=True)
