@@ -11,10 +11,7 @@
         "copper",
         "fed_policy",
         "ecb_policy",
-        "euribor",
-        "euro_inflation",
-        "boj_policy",
-        "bund10y"
+        "euribor"
       ]
     },
     {
@@ -22,12 +19,13 @@
       "password": "w456",
       "is_admin": false,
       "accessible_topics": [
+        "brent",
         "eurusd",
+        "dxy",
+        "copper",
         "fed_policy",
-        "euro_inflation",
-        "boj_policy",
-        "bund10y",
-        "copper"
+        "ecb_policy",
+        "euribor"
       ]
     },
     {
@@ -41,10 +39,7 @@
         "copper",
         "fed_policy",
         "ecb_policy",
-        "euribor",
-        "euro_inflation",
-        "boj_policy",
-        "bund10y"
+        "euribor"
       ]
     },
     {
@@ -58,10 +53,7 @@
         "copper",
         "fed_policy",
         "ecb_policy",
-        "euribor",
-        "euro_inflation",
-        "boj_policy",
-        "bund10y"
+        "euribor"
       ]
     },
     {
