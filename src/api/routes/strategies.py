@@ -223,7 +223,7 @@ def get_analysis_history(username: str, strategy_id: str):
 def set_strategy_default(username: str, strategy_id: str, is_default: bool):
     """Toggle is_default flag (Admin only). When set to true, copies to all users."""
     # Only admins can set default strategies
-    user = user_manager.get_user_by_username(username)
+    user = user_manager.get_user(username)
     if not user or not user.get("is_admin", False):
         raise HTTPException(status_code=403, detail="Only admins can set default strategies")
     
