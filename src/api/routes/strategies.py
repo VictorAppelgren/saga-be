@@ -219,7 +219,7 @@ def get_analysis_history(username: str, strategy_id: str):
     return {"history": history, "count": len(history)}
 
 
-@router.post("/users/{username}/strategies/{strategy_id}/set-default")
+@router.post("/users/{username}/strategies/{strategy_id}/set-default/{is_default}")
 def set_strategy_default(username: str, strategy_id: str, is_default: bool):
     """Toggle is_default flag (Admin only). When set to true, copies to all users."""
     # Only admins can set default strategies
