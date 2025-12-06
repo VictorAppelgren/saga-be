@@ -46,6 +46,7 @@ class StrategyResponse(BaseModel):
     created_at: str
     updated_at: str
     version: int
+    is_default: bool = False
     asset: Dict[str, Any]
     user_input: Dict[str, str]
     latest_analysis: Optional[Dict[str, Any]] = None
