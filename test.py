@@ -15,6 +15,7 @@ Usage:
 import requests
 import json
 import os
+import random
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -25,6 +26,11 @@ load_dotenv()
 BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 GRAPH_API_URL = os.getenv("GRAPH_API_URL", "http://localhost:8001")
 API_KEY = os.getenv("API_KEY", "")
+DIAG_ARTICLE_IDS = os.getenv("DIAG_ARTICLE_IDS", "")
+try:
+    ARTICLE_DIAG_MAX_IDS = int(os.getenv("ARTICLE_DIAG_MAX_IDS", "1000"))
+except ValueError:
+    ARTICLE_DIAG_MAX_IDS = 1000
 
 # Build headers with API key if provided
 HEADERS = {
@@ -161,6 +167,57 @@ def test_interests(username):
             print_result(f"GET /interests?username={username}", r.status_code, {"response": r.text[:200]})
     except Exception as e:
         print(f"   ⚠️  Error: {e}")
+
+
+def test_article_storage_diagnostics():
+    """Test 10: Article Storage Diagnostics (optional)"""
+    print_section("TEST 10: Article Storage Diagnostics")
+    
+    # Storage stats
+    try:
+        r = requests.get(f"{BASE_URL}/api/articles/storage/stats", headers=HEADERS, timeout=10)
+        try:
+            data = r.json()
+        except Exception:
+            data = {"response": r.text[:200]}
+        print_result("GET /api/articles/storage/stats", r.status_code, data)
+    except Exception as e:
+        print(f"   ⚠️  Error: {e}")
+    
+    # Optional existence check for specific IDs from env
+    if DIAG_ARTICLE_IDS:
+        raw_ids = [s.strip() for s in DIAG_ARTICLE_IDS.split(",") if s.strip()]
+        if not raw_ids:
+            return
+        print(f"\n   Checking existence of {len(raw_ids)} IDs from DIAG_ARTICLE_IDS...")
+        try:
+            r = requests.post(
+                f"{BASE_URL}/api/articles/check-existence",
+                headers=HEADERS,
+                json=raw_ids,
+                timeout=30,
+            )
+            try:
+                data = r.json()
+            except Exception:
+                data = {"response": r.text[:200]}
+            summary = {
+                "checked": data.get("checked", len(raw_ids)),
+                "existing": len(data.get("existing", [])),
+                "missing": len(data.get("missing", [])),
+            }
+            print_result(
+                "POST /api/articles/check-existence (DIAG_ARTICLE_IDS)",
+                r.status_code,
+                summary,
+            )
+            missing = data.get("missing") or []
+            if missing:
+                preview = ", ".join(missing[:20])
+                more = "" if len(missing) <= 20 else f"... (+{len(missing) - 20} more)"
+                print(f"   Missing IDs (sample): {preview}{more}")
+        except Exception as e:
+            print(f"   ⚠️  Existence check error: {e}")
     return None
 
 
@@ -220,6 +277,322 @@ def test_articles(topic_id):
             print("   ⚠️  Timeout")
         except Exception as e:
             print(f"   ⚠️  Error: {str(e)}")
+
+
+def test_article_listing_and_sampling():
+    """Test 11: Article Listing & Sampling"""
+    print_section("TEST 11: Article Listing & Sampling")
+    
+    # List first batch of article IDs
+    try:
+        params = {"offset": 0, "limit": 200}
+        r = requests.get(f"{BASE_URL}/api/articles/ids", headers=HEADERS, params=params, timeout=30)
+        try:
+            data = r.json()
+        except Exception:
+            data = {"response": r.text[:200]}
+        ids = data.get("article_ids", [])
+        meta = {
+            "count": len(ids),
+            "has_more": data.get("has_more", False),
+        }
+        print_result("GET /api/articles/ids", r.status_code, meta)
+    except Exception as e:
+        print(f"   ⚠️  Error listing article IDs: {e}")
+        return
+    
+    if not ids:
+        print("   ⚠️  No article IDs returned from /api/articles/ids")
+        return
+    
+    # Sample a few articles and print basic info
+    sample_size = min(5, len(ids))
+    sample_ids = random.sample(ids, sample_size)
+    print(f"\n   Sampling {sample_size} articles:")
+    
+    for article_id in sample_ids:
+        try:
+            r = requests.get(f"{BASE_URL}/api/articles/{article_id}", headers=HEADERS, timeout=10)
+            try:
+                payload = r.json()
+                article_data = payload.get("data", {})
+                inner = article_data.get("data", article_data)
+                title = inner.get("title", "N/A")
+                summary = inner.get("summary") or inner.get("description") or inner.get("argos_summary") or ""
+                content = inner.get("content") or ""
+                text = " ".join([title or "", summary or "", content or ""]).strip()
+                preview = text[:300] if text else ""
+                print_result(
+                    f"GET /api/articles/{article_id}",
+                    r.status_code,
+                    {"title": title, "preview": preview},
+                )
+            except Exception:
+                print_result(
+                    f"GET /api/articles/{article_id}",
+                    r.status_code,
+                    {"response": r.text[:200]},
+                )
+        except Exception as e:
+            print(f"   ⚠️  Error fetching article {article_id}: {e}")
+
+
+def test_article_search_and_existence():
+    """Test 12: Article Search & Existence"""
+    print_section("TEST 12: Article Search & Existence")
+    
+    # Keyword search
+    search_body = {
+        "keywords": ["fed", "rate", "inflation"],
+        "limit": 5,
+        "min_keyword_hits": 2,
+    }
+    results = []
+    try:
+        r = requests.post(
+            f"{BASE_URL}/api/articles/search",
+            headers=HEADERS,
+            json=search_body,
+            timeout=30,
+        )
+        try:
+            data = r.json()
+        except Exception:
+            data = {"response": r.text[:200]}
+        results = data.get("results", [])
+        example_id = results[0]["article_id"] if results else None
+        meta = {
+            "count": len(results),
+            "example_id": example_id,
+        }
+        print_result("POST /api/articles/search", r.status_code, meta)
+    except Exception as e:
+        print(f"   ⚠️  Search error: {e}")
+        return
+    
+    # Existence check on search results (sanity check for storage)
+    if not results:
+        print("   ⚠️  No search results to check existence for")
+        return
+    
+    ids = [r["article_id"] for r in results]
+    try:
+        r = requests.post(
+            f"{BASE_URL}/api/articles/check-existence",
+            headers=HEADERS,
+            json=ids,
+            timeout=30,
+        )
+        try:
+            data = r.json()
+        except Exception:
+            data = {"response": r.text[:200]}
+        summary = {
+            "checked": data.get("checked", len(ids)),
+            "existing": len(data.get("existing", [])),
+            "missing": len(data.get("missing", [])),
+        }
+        print_result(
+            "POST /api/articles/check-existence (search results)",
+            r.status_code,
+            summary,
+        )
+    except Exception as e:
+        print(f"   ⚠️  Existence check error (search results): {e}")
+
+
+def test_article_random_sampling_large():
+    """Test 13: Article Random Sampling (Large)"""
+    print_section("TEST 13: Article Random Sampling (Large)")
+    
+    # Fetch a larger pool of IDs using pagination
+    ids: list[str] = []
+    offset = 0
+    page_limit = 500
+    pages = 0
+    target = max(ARTICLE_DIAG_MAX_IDS, 100)
+    
+    while len(ids) < target:
+        try:
+            params = {"offset": offset, "limit": page_limit}
+            r = requests.get(
+                f"{BASE_URL}/api/articles/ids",
+                headers=HEADERS,
+                params=params,
+                timeout=60,
+            )
+            try:
+                data = r.json()
+            except Exception:
+                data = {"response": r.text[:200]}
+            page_ids = data.get("article_ids", [])
+            if not page_ids:
+                break
+            ids.extend(page_ids)
+            pages += 1
+            offset += len(page_ids)
+            if not data.get("has_more", False):
+                break
+        except Exception as e:
+            print(f"   ⚠️  Error fetching article IDs page at offset {offset}: {e}")
+            break
+    
+    if not ids:
+        print("   ⚠️  No article IDs available for large sampling")
+        return
+    
+    print(
+        f"   Collected {len(ids)} IDs across {pages} pages "
+        f"(target={target}, total_raw_articles may be larger)."
+    )
+    
+    # Sample many articles and check success rate
+    sample_size = min(len(ids), max(100, min(ARTICLE_DIAG_MAX_IDS, 500)))
+    sample_ids = random.sample(ids, sample_size)
+    print(f"\n   Sampling {sample_size} random articles for detailed checks...")
+    
+    ok = 0
+    missing = 0
+    errors = 0
+    shown = 0
+    max_show = 10
+    
+    for article_id in sample_ids:
+        try:
+            r = requests.get(
+                f"{BASE_URL}/api/articles/{article_id}",
+                headers=HEADERS,
+                timeout=10,
+            )
+            status = r.status_code
+            if status == 200:
+                ok += 1
+                if shown < max_show:
+                    try:
+                        payload = r.json()
+                    except Exception:
+                        payload = {"response": r.text[:200]}
+                    article_data = payload.get("data", {})
+                    inner = article_data.get("data", article_data)
+                    title = inner.get("title", "N/A")
+                    summary = (
+                        inner.get("summary")
+                        or inner.get("description")
+                        or inner.get("argos_summary")
+                        or ""
+                    )
+                    content = inner.get("content") or ""
+                    text = " ".join([title or "", summary or "", content or ""]).strip()
+                    preview = text[:300] if text else ""
+                    print_result(
+                        f"GET /api/articles/{article_id}",
+                        status,
+                        {"title": title, "preview": preview},
+                    )
+                    shown += 1
+            elif status == 404:
+                missing += 1
+            else:
+                errors += 1
+        except Exception as e:
+            errors += 1
+            if shown < max_show:
+                print(f"   ⚠️  Error fetching article {article_id}: {e}")
+                shown += 1
+    
+    summary = {
+        "sample_size": sample_size,
+        "ok": ok,
+        "missing_404": missing,
+        "other_errors": errors,
+    }
+    print_result(
+        "Article Random Sampling (Large)",
+        200 if errors == 0 else 500,
+        summary,
+    )
+
+
+def test_article_bulk_existence_sampling():
+    """Test 14: Article Bulk Existence Sampling"""
+    print_section("TEST 14: Article Bulk Existence Sampling")
+    
+    # Get a large set of IDs in a single call (bounded by ARTICLE_DIAG_MAX_IDS)
+    limit = min(max(ARTICLE_DIAG_MAX_IDS, 100), 50000)
+    try:
+        params = {"offset": 0, "limit": limit}
+        r = requests.get(
+            f"{BASE_URL}/api/articles/ids",
+            headers=HEADERS,
+            params=params,
+            timeout=60,
+        )
+        try:
+            data = r.json()
+        except Exception:
+            data = {"response": r.text[:200]}
+        ids = data.get("article_ids", [])
+    except Exception as e:
+        print(f"   ⚠️  Error fetching IDs for bulk existence sampling: {e}")
+        return
+    
+    if not ids:
+        print("   ⚠️  No article IDs returned for bulk existence sampling")
+        return
+    
+    sample_size = min(len(ids), limit)
+    sample_ids = random.sample(ids, sample_size)
+    print(f"   Checking existence for {sample_size} randomly sampled IDs...")
+    
+    total_existing = 0
+    total_missing = 0
+    total_checked = 0
+    batch_size = 500
+    last_status = 200
+    missing_sample: list[str] = []
+    
+    for i in range(0, sample_size, batch_size):
+        batch = sample_ids[i : i + batch_size]
+        try:
+            r = requests.post(
+                f"{BASE_URL}/api/articles/check-existence",
+                headers=HEADERS,
+                json=batch,
+                timeout=60,
+            )
+            last_status = r.status_code
+            try:
+                data = r.json()
+            except Exception:
+                data = {"response": r.text[:200]}
+                continue
+            existing = data.get("existing", [])
+            missing = data.get("missing", [])
+            checked = data.get("checked", len(batch))
+            total_existing += len(existing)
+            total_missing += len(missing)
+            total_checked += checked
+            if not missing_sample and missing:
+                missing_sample = missing[:20]
+        except Exception as e:
+            print(f"   ⚠️  Error in bulk existence batch {i}-{i+len(batch)}: {e}")
+    
+    summary = {
+        "sample_size": sample_size,
+        "checked_reported": total_checked,
+        "existing": total_existing,
+        "missing": total_missing,
+    }
+    print_result(
+        "POST /api/articles/check-existence (bulk sample)",
+        last_status,
+        summary,
+    )
+    
+    if missing_sample:
+        preview = ", ".join(missing_sample)
+        more = "" if total_missing <= len(missing_sample) else f"... (+{total_missing - len(missing_sample)} more)"
+        print(f"   Missing IDs (sample): {preview}{more}")
 
 
 def test_strategies(username):
@@ -510,6 +883,21 @@ def main():
         # Test 9: Admin Endpoints
         test_admin_endpoints()
         
+        # Test 10: Article Storage Diagnostics (optional)
+        test_article_storage_diagnostics()
+        
+        # Test 11: Article Listing & Sampling
+        test_article_listing_and_sampling()
+
+        # Test 12: Article Search & Existence
+        test_article_search_and_existence()
+
+        # Test 13: Article Random Sampling (Large)
+        test_article_random_sampling_large()
+
+        # Test 14: Article Bulk Existence Sampling
+        test_article_bulk_existence_sampling()
+
         print_section("TEST SUMMARY")
         print("✅ All tests completed!")
         print("\nNotes:")

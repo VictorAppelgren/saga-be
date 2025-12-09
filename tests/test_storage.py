@@ -5,6 +5,7 @@ Run from saga-be directory: python tests/test_storage.py
 """
 import sys
 import json
+import os
 from pathlib import Path
 
 # Add parent directory to path so we can import src
@@ -21,7 +22,8 @@ def test_storage():
     
     # Initialize storage
     print("\n1. Initializing storage...")
-    storage = ArticleStorageManager("data/raw_news")
+    data_dir = os.getenv("ARTICLE_DATA_DIR", "data/raw_news")
+    storage = ArticleStorageManager(data_dir)
     print(f"   Data dir: {storage.data_dir.absolute()}")
     print(f"   Today dir: {storage.today_dir.absolute()}")
     

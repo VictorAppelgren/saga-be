@@ -141,6 +141,30 @@ class StrategyStorageManager:
         with open(strategy_path, 'w') as f:
             json.dump(strategy, f, indent=2)
         
+        # If this is an owner copy of a default strategy, propagate analysis to all other users' copies
+        if strategy.get("is_default", False) and strategy.get("owner_username") == username:
+            all_users = self.list_users()
+            for other_user in all_users:
+                if other_user == username:
+                    continue
+                other_path = self.users_dir / other_user / f"{strategy_id}.json"
+                if not other_path.exists():
+                    continue
+                try:
+                    with open(other_path, 'r') as f:
+                        other_strategy = json.load(f)
+                except Exception:
+                    continue
+
+                other_strategy["latest_analysis"] = analysis
+                if "analysis_history" not in other_strategy:
+                    other_strategy["analysis_history"] = []
+                other_strategy["analysis_history"].append(analysis)
+                other_strategy["updated_at"] = strategy["updated_at"]
+
+                with open(other_path, 'w') as f:
+                    json.dump(other_strategy, f, indent=2)
+
         return True
     
     def get_latest_analysis(self, username: str, strategy_id: str) -> Optional[Dict]:
@@ -203,6 +227,10 @@ class StrategyStorageManager:
         # Ensure is_default is set (default to False for user-created strategies)
         if "is_default" not in strategy_data:
             strategy_data["is_default"] = False
+        
+        # Ensure owner is recorded (used to avoid re-analyzing default copies)
+        if "owner_username" not in strategy_data:
+            strategy_data["owner_username"] = username
         
         # Save
         self.save_strategy(username, strategy_data)
