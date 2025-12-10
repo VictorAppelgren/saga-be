@@ -435,8 +435,12 @@ def get_admin_summary() -> Dict:
             "duplicates_skipped": events.get("article_duplicate_skipped", 0)
         },
         "topics": {
+            "suggested": events.get("topic_suggested", 0),
             "created": events.get("topic_created", 0),
             "rejected": events.get("topic_rejected", 0),
+            "rejected_no_proposal": events.get("topic_rejected_no_proposal", 0),
+            "rejected_relevance": events.get("topic_rejected_relevance", 0),
+            "rejected_capacity": events.get("topic_rejected_capacity", 0),
             "deleted": events.get("topic_deleted", 0)
         },
         "analysis": {
