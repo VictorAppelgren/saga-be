@@ -422,6 +422,12 @@ def get_admin_summary() -> Dict:
             "rejected": events.get("article_rejected_no_topics", 0) + 
                        events.get("article_rejected_capacity", 0)
         },
+        "tier_breakdown": {
+            "tier_3": events.get("article_classified_priority_3", 0),
+            "tier_2": events.get("article_classified_priority_2", 0),
+            "tier_1": events.get("article_classified_priority_1", 0),
+            "tier_0": events.get("article_classified_priority_0", 0),
+        },
         "capacity": {
             "downgraded": events.get("article_downgraded", 0),
             "archived": events.get("article_archived", 0),
@@ -436,6 +442,7 @@ def get_admin_summary() -> Dict:
         "analysis": {
             "triggered": events.get("agent_analysis_triggered", 0),
             "completed": events.get("agent_analysis_completed", 0),
+            "skipped": events.get("agent_analysis_skipped", 0),
             "sections": events.get("agent_section_written", 0)
         },
         "strategy_analysis": {
