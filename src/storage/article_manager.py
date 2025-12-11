@@ -14,9 +14,16 @@ logger = logging.getLogger(__name__)
 
 def unwrap_article(article: Dict) -> Dict:
     """Unwrap nested data wrappers from corrupted articles. Single source of truth."""
+    original_size = len(str(article))
     result = article
     while isinstance(result.get("data"), dict) and ("url" in result["data"] or "argos_id" in result["data"]):
         result = result["data"]
+    
+    # Safety check: unwrapped should be at least 80% of original (prevent saving empty)
+    result_size = len(str(result))
+    if result_size < original_size * 0.8:
+        logger.warning(f"Unwrap safety check failed: {result_size} < 80% of {original_size}, keeping original")
+        return article
     return result
 
 
