@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 from pathlib import Path
 import logging
 
-from src.storage.article_manager import ArticleStorageManager
+from src.storage.article_manager import ArticleStorageManager, unwrap_article
 
 router = APIRouter(prefix="/api/articles", tags=["articles"])
 storage = ArticleStorageManager()
@@ -85,13 +85,13 @@ def list_article_ids(
     }
 
 
-@router.get("/{article_id}", response_model=ArticleResponse)
+@router.get("/{article_id}")
 def get_article(article_id: str):
-    """Get article by ID"""
+    """Get article by ID (unwrapped, flat structure)"""
     article = storage.get_article(article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
-    return {"argos_id": article_id, "data": article}
+    return unwrap_article(article)
 
 
 @router.get("")
@@ -300,8 +300,8 @@ def bulk_import_articles(
     
     for article in articles:
         try:
-            # Check if article has ID
-            argos_id = article.get("argos_id")
+            # Check if article has ID (store_article handles unwrapping)
+            argos_id = article.get("argos_id") or article.get("data", {}).get("argos_id")
             if not argos_id:
                 logger.warning("Bulk import: Article missing argos_id, skipping")
                 errors += 1

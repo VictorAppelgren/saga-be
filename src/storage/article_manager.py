@@ -12,6 +12,14 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+def unwrap_article(article: Dict) -> Dict:
+    """Unwrap nested data wrappers from corrupted articles. Single source of truth."""
+    result = article
+    while isinstance(result.get("data"), dict) and ("url" in result["data"] or "argos_id" in result["data"]):
+        result = result["data"]
+    return result
+
+
 class ArticleStorageManager:
     """Manages file-based article storage in data/raw_news/"""
     
@@ -37,7 +45,10 @@ class ArticleStorageManager:
         logger.info(f"   URL cache: {len(self.url_to_id)} URLs indexed")
     
     def store_article(self, article_data: Dict) -> str:
-        """Store article, returns argos_id"""
+        """Store article, returns argos_id. Auto-unwraps nested data."""
+        # Always unwrap before storing to prevent/fix corruption
+        article_data = unwrap_article(article_data)
+        
         argos_id = article_data.get("argos_id")
         if not argos_id:
             raise ValueError("Article must have argos_id")
