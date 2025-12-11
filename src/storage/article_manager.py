@@ -384,3 +384,69 @@ class ArticleStorageManager:
         
         # No duplicate found
         return None
+    
+    def cleanup_corrupted_files(self, dry_run: bool = True) -> dict:
+        """
+        Fix corrupted article files with nested data wrappers directly on disk.
+        Run this on the server to avoid network overhead.
+        
+        Args:
+            dry_run: If True, only report what would be fixed without modifying files
+        
+        Returns:
+            Stats dict with total, corrupted, fixed counts
+        """
+        stats = {"total": 0, "corrupted": 0, "fixed": 0, "errors": 0}
+        
+        for date_dir in self.data_dir.iterdir():
+            if not date_dir.is_dir():
+                continue
+            
+            for file_path in date_dir.glob("*.json"):
+                stats["total"] += 1
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        article = json.load(f)
+                    
+                    # Check if nested
+                    unwrapped = unwrap_article(article)
+                    if unwrapped is not article:  # Was unwrapped
+                        stats["corrupted"] += 1
+                        if not dry_run:
+                            with open(file_path, "w", encoding="utf-8") as f:
+                                json.dump(unwrapped, f, indent=2)
+                            stats["fixed"] += 1
+                
+                except Exception as e:
+                    stats["errors"] += 1
+                    logger.error(f"Error processing {file_path}: {e}")
+                
+                # Progress every 5000
+                if stats["total"] % 5000 == 0:
+                    logger.info(f"Progress: {stats['total']} scanned, {stats['corrupted']} corrupted")
+        
+        return stats
+
+
+# CLI for direct server-side cleanup
+if __name__ == "__main__":
+    import argparse
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    
+    parser = argparse.ArgumentParser(description="Article storage cleanup")
+    parser.add_argument("--fix", action="store_true", help="Actually fix files (default is dry-run)")
+    parser.add_argument("--data-dir", default="data/raw_news", help="Data directory path")
+    args = parser.parse_args()
+    
+    storage = ArticleStorageManager(data_dir=args.data_dir)
+    
+    mode = "FIXING" if args.fix else "DRY-RUN"
+    logger.info(f"🧹 Starting cleanup ({mode})...")
+    
+    stats = storage.cleanup_corrupted_files(dry_run=not args.fix)
+    
+    logger.info(f"✅ Done!")
+    logger.info(f"   Total:     {stats['total']}")
+    logger.info(f"   Corrupted: {stats['corrupted']}")
+    logger.info(f"   Fixed:     {stats['fixed']}")
+    logger.info(f"   Errors:    {stats['errors']}")
