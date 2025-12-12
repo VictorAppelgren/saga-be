@@ -510,16 +510,17 @@ Deliver maximum insight density. Every word must earn its place. Show transmissi
 class RewriteSectionRequest(BaseModel):
     strategy_id: str
     section: str
+    section_title: str = ""  # Human-readable title
     feedback: str
     current_content: str
     username: Optional[str] = None
+    messages: list = []  # Conversation history (for chat context)
 
 
 @app.post("/api/strategy/rewrite-section")
 def rewrite_strategy_section(request: RewriteSectionRequest, cookies: Request = None):
     """
-    Proxy rewrite request to Graph API.
-    Rewrites a single section of strategy analysis based on user feedback.
+    Proxy rewrite request to Graph API, then use chat() to generate contextual comment.
     """
     # Get username from request or session
     username = request.username
@@ -529,20 +530,54 @@ def rewrite_strategy_section(request: RewriteSectionRequest, cookies: Request = 
     if not username:
         raise HTTPException(status_code=401, detail="Username required")
     
+    section_title = request.section_title or request.section.replace("_", " ").title()
+    
     try:
+        # 1. Call graph-functions for the actual rewrite
         response = requests.post(
             f"{GRAPH_API_URL}/strategy/rewrite-section",
             json={
                 "username": username,
                 "strategy_id": request.strategy_id,
                 "section": request.section,
+                "section_title": section_title,
                 "feedback": request.feedback,
                 "current_content": request.current_content,
             },
             timeout=120  # Long timeout for LLM processing
         )
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+        new_content = result.get("new_content", "")
+        
+        # 2. Use existing chat() to generate contextual comment
+        # Build history from messages + add context about the rewrite
+        chat_history = [{"role": m.get("role", "user"), "content": m.get("content", "")} 
+                        for m in request.messages[-5:]] if request.messages else []
+        
+        # Add the rewrite context as a system-injected user message
+        rewrite_context_msg = f"[I just updated the {section_title} section based on: '{request.feedback}'. Briefly confirm what was changed in 1-2 sentences, starting with ✅]"
+        
+        chat_request = ChatRequest(
+            message=rewrite_context_msg,
+            history=chat_history,
+            strategy_id=request.strategy_id,
+            username=username,
+        )
+        
+        try:
+            chat_response = chat(chat_request)
+            comment = chat_response.get("response", f"✅ Done! I've updated the {section_title} section.")
+        except Exception as e:
+            print(f"⚠️ Chat comment failed: {e}")
+            comment = f"✅ Done! I've updated the {section_title} section based on your feedback. Let me know if you'd like any other changes."
+        
+        return {
+            "new_content": new_content,
+            "comment": comment,
+            "section": request.section
+        }
+        
     except requests.exceptions.Timeout:
         raise HTTPException(status_code=504, detail="Rewrite request timed out")
     except Exception as e:
