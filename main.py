@@ -540,7 +540,6 @@ def rewrite_strategy_section(request: RewriteSectionRequest, cookies: Request = 
                 "username": username,
                 "strategy_id": request.strategy_id,
                 "section": request.section,
-                "section_title": section_title,
                 "feedback": request.feedback,
                 "current_content": request.current_content,
             },
