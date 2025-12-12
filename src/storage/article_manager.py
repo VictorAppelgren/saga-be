@@ -1,4 +1,13 @@
-"""Article Storage Manager - Simple file-based storage"""
+"""
+Article Storage Manager - Simple file-based storage
+
+Usage (cleanup corrupted articles):
+    cd saga-be
+    python src/storage/article_manager.py                              # Dry-run (show what would be fixed)
+    python src/storage/article_manager.py --fix                        # Actually fix files
+    python src/storage/article_manager.py --data-dir /custom/path      # Custom data directory
+    python src/storage/article_manager.py --data-dir /custom/path --fix
+"""
 import os
 import json
 import re

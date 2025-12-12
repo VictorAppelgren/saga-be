@@ -506,6 +506,49 @@ Deliver maximum insight density. Every word must earn its place. Show transmissi
         raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
 
 
+# ============ STRATEGY REWRITE ============
+class RewriteSectionRequest(BaseModel):
+    strategy_id: str
+    section: str
+    feedback: str
+    current_content: str
+    username: Optional[str] = None
+
+
+@app.post("/api/strategy/rewrite-section")
+def rewrite_strategy_section(request: RewriteSectionRequest, cookies: Request = None):
+    """
+    Proxy rewrite request to Graph API.
+    Rewrites a single section of strategy analysis based on user feedback.
+    """
+    # Get username from request or session
+    username = request.username
+    if not username and cookies:
+        username = cookies.cookies.get("session")
+    
+    if not username:
+        raise HTTPException(status_code=401, detail="Username required")
+    
+    try:
+        response = requests.post(
+            f"{GRAPH_API_URL}/strategy/rewrite-section",
+            json={
+                "username": username,
+                "strategy_id": request.strategy_id,
+                "section": request.section,
+                "feedback": request.feedback,
+                "current_content": request.current_content,
+            },
+            timeout=120  # Long timeout for LLM processing
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Rewrite request timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Rewrite failed: {str(e)}")
+
+
 # ============ HEALTH ============
 @app.get("/")
 def root():
