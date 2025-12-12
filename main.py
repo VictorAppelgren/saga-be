@@ -565,10 +565,15 @@ def rewrite_strategy_section(request: RewriteSectionRequest, cookies: Request = 
         )
         
         try:
+            print(f"📝 Generating comment via chat() for {section_title}...")
             chat_response = chat(chat_request)
+            print(f"✅ Chat response received: {type(chat_response)}")
             comment = chat_response.get("response", f"✅ Done! I've updated the {section_title} section.")
+            print(f"💬 Comment: {comment[:100]}...")
         except Exception as e:
+            import traceback
             print(f"⚠️ Chat comment failed: {e}")
+            print(traceback.format_exc())
             comment = f"✅ Done! I've updated the {section_title} section based on your feedback. Let me know if you'd like any other changes."
         
         return {
@@ -579,6 +584,8 @@ def rewrite_strategy_section(request: RewriteSectionRequest, cookies: Request = 
         
     except requests.exceptions.Timeout:
         raise HTTPException(status_code=504, detail="Rewrite request timed out")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Rewrite failed: {str(e)}")
 
