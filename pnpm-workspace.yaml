@@ -1,7 +1,0 @@
-packages:
-  - 'src/api'
-  - 'src/infrastructure'
-  - 'src/pipelines/scheduled'
-  - 'src/shared'
-  - 'src/storage'
-  - 'src/validation'
