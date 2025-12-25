@@ -220,6 +220,59 @@ def get_analysis_history(username: str, strategy_id: str):
     return {"history": history, "count": len(history)}
 
 
+@router.get("/users/{username}/strategies/{strategy_id}/findings/{mode}")
+def get_strategy_findings(username: str, strategy_id: str, mode: str):
+    """Get current exploration findings (risks or opportunities) for strategy.
+
+    Args:
+        mode: "risk" or "opportunity"
+
+    Returns:
+        List of findings (max 3)
+    """
+    if mode not in ("risk", "opportunity"):
+        raise HTTPException(status_code=400, detail="mode must be 'risk' or 'opportunity'")
+
+    strategy = storage.get_strategy(username, strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    findings = storage.get_findings(username, strategy_id, mode)
+    return {"findings": findings, "count": len(findings), "mode": mode}
+
+
+@router.post("/users/{username}/strategies/{strategy_id}/findings/{mode}")
+def add_strategy_finding(username: str, strategy_id: str, mode: str, finding: Dict[str, Any]):
+    """Add or replace an exploration finding.
+
+    Args:
+        mode: "risk" or "opportunity"
+        finding: Dict with keys: headline, rationale, flow_path, evidence, confidence
+                 Optional: replaces (int 1-3) to replace existing slot
+
+    Returns:
+        Success status
+    """
+    if mode not in ("risk", "opportunity"):
+        raise HTTPException(status_code=400, detail="mode must be 'risk' or 'opportunity'")
+
+    strategy = storage.get_strategy(username, strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    # Extract replaces if provided
+    replaces = finding.pop("replaces", None)
+
+    success = storage.save_finding(username, strategy_id, mode, finding, replaces)
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail="Failed to save finding. List may be full (max 3) - specify 'replaces' to replace an existing slot."
+        )
+
+    return {"success": True, "mode": mode, "replaces": replaces}
+
+
 @router.post("/users/{username}/strategies/{strategy_id}/set-default/{is_default}")
 def set_strategy_default(username: str, strategy_id: str, is_default: bool):
     """Toggle is_default flag (Admin only). When set to true, copies to all users. When false, removes from all users."""

@@ -10,7 +10,19 @@ import json
 import os
 import requests
 
+from src.storage.article_manager import ArticleStorageManager
+
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+# Lazy-initialized article storage (singleton)
+_article_storage: ArticleStorageManager = None
+
+def _get_article_storage() -> ArticleStorageManager:
+    """Get or create article storage manager singleton."""
+    global _article_storage
+    if _article_storage is None:
+        _article_storage = ArticleStorageManager()
+    return _article_storage
 
 # Stats directories (same as stats.py)
 STATS_DIR = Path("stats/stats")
@@ -411,9 +423,13 @@ def get_admin_summary() -> Dict:
     
     # Get graph state from Neo4j
     graph_state = _get_graph_state()
-    
+
+    # Get cold storage stats
+    cold_storage = _get_article_storage().get_stats()
+
     return {
         "date": today,
+        "cold_storage": cold_storage,
         "pipeline": {
             "queries": events.get("query_executed", 0),
             "fetched": events.get("article_fetched", 0),
@@ -545,6 +561,36 @@ def get_graph_state_detailed() -> Dict:
     Returns comprehensive graph metrics for monitoring
     """
     return _get_graph_state()
+
+
+# ============================================================================
+# COLD STORAGE ENDPOINTS
+# ============================================================================
+
+@router.get("/cold-storage/stats")
+def get_cold_storage_stats() -> Dict:
+    """
+    Get cold storage (file-based) article statistics.
+
+    Returns total articles, date range, and URL cache size.
+    """
+    storage = _get_article_storage()
+    return storage.get_stats()
+
+
+@router.get("/article-distribution")
+def get_article_distribution() -> Dict:
+    """
+    Get article distribution by timeframe and perspective from Neo4j.
+
+    Returns counts per topic for each timeframe × perspective combination.
+    """
+    try:
+        response = requests.get(f"{GRAPH_API_URL}/neo/article-distribution", timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
 
 
 # ============================================================================

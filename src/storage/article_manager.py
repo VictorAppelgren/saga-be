@@ -394,6 +394,30 @@ class ArticleStorageManager:
         # No duplicate found
         return None
     
+    def get_stats(self) -> dict:
+        """
+        Get cold storage statistics.
+
+        Returns:
+            {
+                "total_articles": int,
+                "total_days": int,
+                "urls_indexed": int,
+                "oldest_date": str or None,
+                "newest_date": str or None
+            }
+        """
+        date_dirs = [d for d in self.data_dir.iterdir() if d.is_dir()]
+        date_names = sorted([d.name for d in date_dirs])
+
+        return {
+            "total_articles": len(self.article_ids),
+            "total_days": len(date_dirs),
+            "urls_indexed": len(self.url_to_id),
+            "oldest_date": date_names[0] if date_names else None,
+            "newest_date": date_names[-1] if date_names else None
+        }
+
     def cleanup_corrupted_files(self, dry_run: bool = True) -> dict:
         """
         Fix corrupted article files with nested data wrappers directly on disk.

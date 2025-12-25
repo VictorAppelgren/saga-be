@@ -263,14 +263,89 @@ class StrategyStorageManager:
         strategy_path = self.users_dir / username / f"{strategy_id}.json"
         if not strategy_path.exists():
             return False
-        
+
         # Move to archive
         user_dir = self.users_dir / username
         archive_dir = user_dir / "archive"
         archive_dir.mkdir(exist_ok=True)
-        
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         archive_path = archive_dir / f"{strategy_id}_deleted_{timestamp}.json"
-        
+
         strategy_path.rename(archive_path)
+        return True
+
+    def get_findings(self, username: str, strategy_id: str, mode: str) -> List[Dict]:
+        """Get current exploration findings (risks or opportunities) for strategy.
+
+        Args:
+            username: User who owns the strategy
+            strategy_id: Strategy ID
+            mode: "risk" or "opportunity"
+
+        Returns:
+            List of findings (max 3), empty list if none
+        """
+        strategy = self.get_strategy(username, strategy_id)
+        if not strategy:
+            return []
+
+        # Get from exploration_findings section
+        findings = strategy.get("exploration_findings", {})
+        key = "risks" if mode == "risk" else "opportunities"
+        return findings.get(key, [])
+
+    def save_finding(self, username: str, strategy_id: str, mode: str, finding: Dict, replaces: Optional[int] = None) -> bool:
+        """Save an exploration finding to strategy.
+
+        Args:
+            username: User who owns the strategy
+            strategy_id: Strategy ID
+            mode: "risk" or "opportunity"
+            finding: The finding dict (headline, rationale, flow_path, evidence, confidence)
+            replaces: If None, add new (max 3). If 1/2/3, replace that slot.
+
+        Returns:
+            True if saved successfully
+        """
+        strategy_path = self.users_dir / username / f"{strategy_id}.json"
+        if not strategy_path.exists():
+            return False
+
+        with open(strategy_path, 'r') as f:
+            strategy = json.load(f)
+
+        # Initialize exploration_findings if needed
+        if "exploration_findings" not in strategy:
+            strategy["exploration_findings"] = {"risks": [], "opportunities": []}
+
+        key = "risks" if mode == "risk" else "opportunities"
+        if key not in strategy["exploration_findings"]:
+            strategy["exploration_findings"][key] = []
+
+        findings_list = strategy["exploration_findings"][key]
+
+        # Add timestamp
+        finding["added_at"] = datetime.now().isoformat()
+
+        if replaces is not None:
+            # Replace existing slot (1-indexed)
+            idx = replaces - 1
+            if 0 <= idx < len(findings_list):
+                findings_list[idx] = finding
+            else:
+                # Slot doesn't exist, append instead
+                findings_list.append(finding)
+        else:
+            # Add new - max 3
+            if len(findings_list) >= 3:
+                return False  # Full, need to specify which to replace
+            findings_list.append(finding)
+
+        strategy["exploration_findings"][key] = findings_list
+        strategy["updated_at"] = datetime.now().isoformat()
+
+        with open(strategy_path, 'w') as f:
+            json.dump(strategy, f, indent=2)
+
         return True
