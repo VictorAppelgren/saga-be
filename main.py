@@ -54,11 +54,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Request logging middleware
+# Worker tracking import
+from src.storage.worker_registry import update_worker
+
+# Request logging middleware (also tracks worker headers)
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     logger.info(f"📥 {request.method} {request.url.path}")
-    logger.info(f"   Cookies: {dict(request.cookies)}")
+
+    # Track worker if headers present
+    worker_id = request.headers.get("X-Worker-ID")
+    if worker_id:
+        machine = request.headers.get("X-Worker-Machine", "unknown")
+        task = request.headers.get("X-Worker-Task")
+        update_worker(worker_id, machine, task)
+
     response = await call_next(request)
     logger.info(f"📤 Status: {response.status_code}")
     return response

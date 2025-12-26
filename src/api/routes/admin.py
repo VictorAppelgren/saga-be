@@ -11,6 +11,7 @@ import os
 import requests
 
 from src.storage.article_manager import ArticleStorageManager
+from src.storage.worker_registry import get_worker_summary
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -591,6 +592,21 @@ def get_article_distribution() -> Dict:
         return response.json()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
+
+
+# ============================================================================
+# WORKERS ENDPOINT
+# ============================================================================
+
+@router.get("/workers")
+def get_workers() -> Dict:
+    """
+    Get all workers with active status.
+
+    Workers are considered active if seen in the last 5 minutes.
+    Returns worker list and summary counts.
+    """
+    return get_worker_summary()
 
 
 # ============================================================================

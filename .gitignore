@@ -25,3 +25,7 @@ __pycache__/
 
 master_stats/
 master_logs/
+
+# SQLite worker tracking DB
+*.db
+saga_workers.db
