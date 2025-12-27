@@ -66,8 +66,7 @@ async def log_requests(request: Request, call_next):
     worker_id = request.headers.get("X-Worker-ID")
     if worker_id:
         machine = request.headers.get("X-Worker-Machine", "unknown")
-        task = request.headers.get("X-Worker-Task")
-        update_worker(worker_id, machine, task)
+        update_worker(worker_id, machine)
 
     response = await call_next(request)
     logger.info(f"📤 Status: {response.status_code}")
@@ -220,12 +219,41 @@ def get_report(topic_id: str):
 
 
 # ============ CHAT ============
+
+def _execute_news_search(query: str) -> str:
+    """Execute news search tool. Returns formatted results."""
+    try:
+        response = requests.post(
+            f"{GRAPH_API_URL}/chat/search-news",
+            json={"query": query, "max_results": 5},
+            timeout=15
+        )
+        if response.status_code != 200:
+            return "News search unavailable."
+
+        articles = response.json().get("articles", [])
+        if not articles:
+            return "No recent news found for this query."
+
+        lines = [f"Found {len(articles)} recent articles:"]
+        for i, a in enumerate(articles, 1):
+            lines.append(f"\n[News {i}] {a.get('title', 'N/A')}")
+            lines.append(f"Source: {a.get('source', 'Unknown')} | Date: {a.get('pubDate', '')[:10]}")
+            if a.get('summary'):
+                lines.append(f"Summary: {a['summary'][:300]}")
+
+        return "\n".join(lines)
+    except Exception as e:
+        logger.warning(f"News search failed: {e}")
+        return f"News search error: {str(e)}"
+
+
 @app.post("/api/chat")
 def chat(request: ChatRequest):
-    """Chat - Backend handles ALL LLM logic with incredible prompt"""
+    """Agentic chat - LLM decides when to use tools"""
     from langchain_anthropic import ChatAnthropic
-    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-    
+    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
+
     try:
         # 1. Load strategy from files if provided
         strategy_data = None
@@ -417,7 +445,7 @@ def chat(request: ChatRequest):
                     pass  # Skip if error
         
         full_context = "\n".join(context_parts) if context_parts else ""
-        
+
         # Determine context type
         if request.strategy_id and request.topic_id:
             context_type = "strategy + market intelligence"
@@ -427,7 +455,7 @@ def chat(request: ChatRequest):
             context_type = "market intelligence"
         else:
             context_type = "general financial knowledge"
-        
+
         # 4. Build chat history
         messages = []
         for msg in request.history:
@@ -435,80 +463,102 @@ def chat(request: ChatRequest):
                 messages.append(HumanMessage(content=msg["content"]))
             elif msg.get("role") == "assistant":
                 messages.append(AIMessage(content=msg["content"]))
-        
+
         messages.append(HumanMessage(content=request.message))
-        
-        # 5. THE WORLD-CLASS PROMPT
-        system_prompt = f"""You are Saga—the world's most elite financial intelligence analyst combining Ray Dalio's principles-based thinking, George Soros's reflexivity, and Renaissance Technologies' quantitative rigor.
 
-═══ MISSION ═══
-Transform complex financial questions into concise, actionable intelligence with MAXIMUM INSIGHT DENSITY.
-Maximum 150 words. Every word must deliver alpha.
+        # 5. Define tool for the agent
+        tools = [
+            {
+                "name": "search_news",
+                "description": "Search recent news articles (past 14 days) when you need current information about markets, events, or topics not covered in the provided context. Use this when: (1) user asks about recent/latest/current events, (2) you lack sufficient context to answer, (3) you need to verify or expand on information.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query - use a statement not a question. Example: 'Federal Reserve interest rate policy impact' instead of 'What is the Fed doing?'"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        ]
 
-═══ ELITE STANDARDS ═══
-Your analysis must reflect ELITE HEDGE FUND STANDARDS:
-- **Causal Chains**: Show explicit A→mechanism→B→impact transmission
-- **Cross-Domain Synthesis**: Connect macro→flows→microstructure→price
-- **Second-Order Thinking**: What happens AFTER the obvious move?
-- **Asymmetric Insight**: Where is consensus wrong? What's non-obvious?
-- **Quantified Precision**: Exact levels, probabilities, timeframes with sources
-- **Citation Discipline**: Every fact needs source (Article X)
+        # 6. Build system prompt
+        system_prompt = f"""You are Saga—an elite financial intelligence analyst with access to live news search.
 
-═══ CONTEXT TYPE ═══
-{context_type}
+═══ AVAILABLE TOOL ═══
+You have ONE tool: search_news
+- Use it when you need current market information not in your context
+- Use it when user asks about "latest", "recent", "current", "today", "news"
+- Use it when your context is insufficient to answer properly
+- You can call it multiple times with different queries if needed
 
-{full_context}
+═══ CONTEXT ═══
+Type: {context_type}
 
-═══ RESPONSE FRAMEWORK ═══
-**Answer:** [Direct 2-3 sentence response with causal chain]
+{full_context if full_context else "No pre-loaded context. Use search_news tool if you need current information."}
 
-**Key Insight:** [Most critical NON-OBVIOUS factor with transmission mechanism]
+═══ RESPONSE STYLE ═══
+After gathering information (via tool or from context):
+- **Answer**: Direct 2-3 sentence response with causal chain
+- **Key Insight**: Most critical non-obvious factor
+- **Risk/Opportunity**: What could go wrong/right
+- Cite sources: [News 1], [Article 2], etc.
+- Max 150 words in final response
+- End with a strategic follow-up question"""
 
-**Risk/Opportunity:** [What could go wrong/right with probability and levels]
-
-**Next:** [Strategic question to advance discussion]
-
-═══ WORLD-CLASS RULES ═══
-• **BREVITY IS INTELLIGENCE**: Max 150 words total
-• **CAUSAL CHAINS**: Never say "X affects Y"—show "X→mechanism→Y at level"
-• **CITE ALL SOURCES**: Every factual claim MUST reference specific article
-  - Format: "According to [Source] (Article X): [Fact]"
-  - Example: "According to Bloomberg (Article 3): PJM queues 48 months→delays 18-24 months→capacity gap"
-  - If no article supports claim, say "No recent coverage found"
-  - NEVER make unsourced claims about specific numbers, dates, or events
-• **QUANTIFIED PRECISION**: Use exact numbers, probabilities, timeframes FROM SOURCES ONLY
-  - Ban: "significant", "substantial", "considerable", "might", "could"
-  - Use: "60% probability", "$50B flows", "next 2-3 weeks", "target 1.05"
-• **SECOND-ORDER THINKING**: Show "then what?"—identify feedback loops, compounding effects
-• **ASYMMETRIC INSIGHT**: Challenge consensus where evidence supports (positioning extremes, contrarian data)
-• **CROSS-DOMAIN SYNTHESIS**: Connect distant domains for superior insights
-• **ACTIONABLE ONLY**: Every sentence drives investment decisions
-• **CONVERSATION LEADERSHIP**: End with strategic question that deepens analysis
-
-Question: "{request.message}"
-
-Deliver maximum insight density. Every word must earn its place. Show transmission mechanisms. Challenge consensus with evidence."""
-        
-        # 6. Call LLM (or return context if test mode)
+        # 7. Call LLM with tools (agentic loop)
         if request.test:
-            # TEST MODE: Return full context for debugging
             return {
                 "test_mode": True,
                 "context_type": context_type,
                 "system_prompt": system_prompt,
                 "full_context": full_context,
-                "context_size_chars": len(full_context),
-                "context_size_tokens": len(full_context) // 4,  # Rough estimate
-                "message": request.message,
-                "history_length": len(request.history)
+                "tools": tools,
+                "message": request.message
             }
-        
-        # NORMAL MODE: Call LLM
+
+        # Initialize LLM with tools
         llm = ChatAnthropic(model="claude-sonnet-4-5-20250929", temperature=0.7)
-        messages_with_system = [SystemMessage(content=system_prompt)] + messages
-        response = llm.invoke(messages_with_system)
-        
-        return {"response": response.content}
+
+        # Agentic loop - let LLM decide when to use tools
+        current_messages = [SystemMessage(content=system_prompt)] + messages
+        max_iterations = 5  # Prevent infinite loops
+
+        for iteration in range(max_iterations):
+            response = llm.invoke(current_messages, tools=tools)
+
+            # Check if LLM wants to use a tool
+            if response.tool_calls:
+                # Process each tool call
+                for tool_call in response.tool_calls:
+                    if tool_call["name"] == "search_news":
+                        query = tool_call["args"].get("query", request.message)
+                        logger.info(f"Agent calling search_news: {query[:50]}...")
+
+                        # Execute the tool
+                        tool_result = _execute_news_search(query)
+
+                        # Add assistant message with tool call
+                        current_messages.append(response)
+
+                        # Add tool result
+                        current_messages.append(
+                            ToolMessage(
+                                content=tool_result,
+                                tool_call_id=tool_call["id"]
+                            )
+                        )
+
+                # Continue the loop to let LLM process tool results
+                continue
+            else:
+                # No tool calls - LLM is ready to respond
+                return {"response": response.content}
+
+        # Fallback if max iterations reached
+        return {"response": response.content if hasattr(response, 'content') else "I encountered an issue processing your request."}
         
     except HTTPException:
         raise

@@ -332,39 +332,47 @@ def get_queries_trend(days: int = Query(10, le=90)) -> Dict:
 def get_analysis_trend(days: int = Query(10, le=90)) -> Dict:
     """
     Get agent analysis trends
-    
-    Shows analysis triggers, completions, and sections written
+
+    Shows analysis triggers, completions, skips, and sections written
     """
     dates = []
     triggered = []
     completed = []
+    skipped_no_new = []
+    skipped_cooldown = []
     sections = []
-    
+
     today = date.today()
-    
+
     for i in range(days):
         target_date = today - timedelta(days=i)
         date_str = target_date.isoformat()
         stats_file = STATS_DIR / f"stats_{date_str}.json"
-        
+
         dates.insert(0, date_str)
-        
+
         if stats_file.exists():
             data = json.loads(stats_file.read_text())
             events = data.get("events", {})
-            
-            triggered.insert(0, events.get("agent_analysis_triggered", 0))
+
+            triggered.insert(0, events.get("analysis.triggered.new_articles", 0))
             completed.insert(0, events.get("agent_analysis_completed", 0))
+            skipped_no_new.insert(0, events.get("analysis.skipped.no_new_articles", 0))
+            skipped_cooldown.insert(0, events.get("analysis.skipped.cooldown", 0))
             sections.insert(0, events.get("agent_section_written", 0))
         else:
             triggered.insert(0, 0)
             completed.insert(0, 0)
+            skipped_no_new.insert(0, 0)
+            skipped_cooldown.insert(0, 0)
             sections.insert(0, 0)
-    
+
     return {
         "dates": dates,
         "triggered": triggered,
         "completed": completed,
+        "skipped_no_new": skipped_no_new,
+        "skipped_cooldown": skipped_cooldown,
         "sections": sections
     }
 
@@ -461,9 +469,10 @@ def get_admin_summary() -> Dict:
             "deleted": events.get("topic_deleted", 0)
         },
         "analysis": {
-            "triggered": events.get("agent_analysis_triggered", 0),
+            "triggered": events.get("analysis.triggered.new_articles", 0),
             "completed": events.get("agent_analysis_completed", 0),
-            "skipped": events.get("agent_analysis_skipped", 0),
+            "skipped_no_new": events.get("analysis.skipped.no_new_articles", 0),
+            "skipped_cooldown": events.get("analysis.skipped.cooldown", 0),
             "sections": events.get("agent_section_written", 0)
         },
         "strategy_analysis": {

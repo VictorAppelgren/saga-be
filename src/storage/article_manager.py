@@ -14,6 +14,7 @@ import re
 import random
 import string
 import logging
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 from datetime import datetime
@@ -49,16 +50,18 @@ class ArticleStorageManager:
         # URL cache for fast deduplication (critical for performance)
         # WHY: Without cache, URL lookups require scanning ALL article files (slow O(n))
         # WITH cache: URL lookups are instant hash table lookups (fast O(1))
-        # Example: 18k articles → without cache = 30+ min, with cache = 2 min
-        # Built once on startup, updated on each new article store
+        # Built in background thread to avoid blocking API startup
         self.url_to_id: Dict[str, str] = {}
-        self._build_url_cache()
-        
+        self._url_cache_ready = False
+
+        # Build cache in background (non-blocking)
+        threading.Thread(target=self._build_url_cache, daemon=True).start()
+
         logger.info(f"📁 ArticleStorageManager initialized")
         logger.info(f"   Data dir: {self.data_dir.absolute()}")
         logger.info(f"   Today dir: {self.today_dir.absolute()}")
         logger.info(f"   Existing articles: {len(self.article_ids)}")
-        logger.info(f"   URL cache: {len(self.url_to_id)} URLs indexed")
+        logger.info(f"   URL cache: building in background...")
     
     def store_article(self, article_data: Dict) -> str:
         """Store article, returns argos_id. Auto-unwraps nested data."""
@@ -147,20 +150,16 @@ class ArticleStorageManager:
     
     def _build_url_cache(self):
         """
-        Build URL→ID cache on startup for fast lookups.
-        
-        This is a one-time scan of all article files to build an in-memory
-        index of URL→article_id mappings. After this, URL deduplication
-        checks become instant instead of requiring file scans.
-        
-        Performance: ~2 seconds for 18k articles on startup.
-        Benefit: Saves 30+ minutes during bulk uploads.
+        Build URL→ID cache in background for fast lookups.
+
+        Runs in a separate thread to avoid blocking API startup.
+        Until complete, URL lookups return None (graceful degradation).
         """
         count = 0
         for date_dir in self.data_dir.iterdir():
             if not date_dir.is_dir():
                 continue
-            
+
             for article_file in date_dir.glob("*.json"):
                 try:
                     with open(article_file, 'r', encoding='utf-8') as f:
@@ -172,6 +171,9 @@ class ArticleStorageManager:
                             count += 1
                 except Exception:
                     continue
+
+        self._url_cache_ready = True
+        logger.info(f"✅ URL cache ready: {count} URLs indexed")
     
     def find_article_by_url(self, url: str) -> Optional[str]:
         """
