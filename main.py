@@ -6,6 +6,7 @@ import os
 import json
 import logging
 import requests
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Response, Request
@@ -26,6 +27,8 @@ load_dotenv()
 from src.storage.user_manager import UserManager
 from src.storage.article_manager import ArticleStorageManager
 from src.storage.strategy_manager import StrategyStorageManager
+from src.storage.conversations import conversation_store
+from src.models.conversation import Message, MessageRole
 
 # Import API routers
 from src.api.routes import articles, admin, strategies, stats
@@ -91,7 +94,6 @@ class LoginRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
-    history: List[Dict[str, str]] = []
     topic_id: Optional[str] = None
     strategy_id: Optional[str] = None
     username: Optional[str] = None
@@ -248,250 +250,133 @@ def _execute_news_search(query: str) -> str:
         return f"News search error: {str(e)}"
 
 
+def _build_full_context(request: ChatRequest, strategy_data: dict = None) -> tuple:
+    """Build context from Neo4j and strategy. Returns (context_str, context_type)."""
+    context_parts = []
+
+    # Get Neo4j context if topic provided
+    neo_context = None
+    if request.topic_id:
+        try:
+            response = requests.post(
+                f"{GRAPH_API_URL}/neo/build-context",
+                json={
+                    "topic_id": request.topic_id,
+                    "include_full_articles": True,
+                    "include_related_topics": True,
+                    "max_articles": 15
+                },
+                timeout=15
+            )
+            response.raise_for_status()
+            neo_context = response.json()
+        except Exception as e:
+            logger.warning(f"Graph API context unavailable: {e}")
+
+    # PART 1: Market Intelligence from Neo4j
+    if neo_context and neo_context.get("topic_name"):
+        context_parts.append("═══ PRIMARY ASSET INTELLIGENCE ═══")
+        context_parts.append(f"Asset: {neo_context['topic_name']}\n")
+
+        reports = neo_context.get("reports", {})
+        if reports:
+            context_parts.append("【COMPLETE ANALYSIS】")
+            for section in ["executive_summary", "market_dynamics", "risk_factors", "opportunity_assessment", "recent_developments"]:
+                content = reports.get(section, "")
+                if content and content.strip():
+                    context_parts.append(f"\n{section.replace('_', ' ').title()}:")
+                    context_parts.append(content.strip())
+            context_parts.append("")
+
+        articles = neo_context.get("articles", [])
+        if articles:
+            context_parts.append("◆ RECENT DEVELOPMENTS:")
+            for i, article in enumerate(articles[:10], 1):
+                context_parts.append(f"\n[Article {i}] {article.get('title', 'Untitled')}")
+                context_parts.append(f"Source: {article.get('source', 'Unknown')} | {article.get('published_at', 'N/A')}")
+                if article.get('content'):
+                    context_parts.append(f"Content: {article['content'][:800]}...")
+                if article.get('motivation'):
+                    context_parts.append(f"Why Relevant: {article['motivation']}")
+            context_parts.append("")
+
+        related_topics = neo_context.get("related_topics", [])
+        if related_topics:
+            context_parts.append("【RELATED ASSETS】")
+            for rel in related_topics:
+                context_parts.append(f"• {rel['name']} ({rel['relationship']}): {rel.get('executive_summary', '')[:200]}")
+            context_parts.append("")
+
+    # PART 2: User's Trading Strategy
+    if strategy_data:
+        context_parts.append("═══ USER'S TRADING STRATEGY ═══")
+        context_parts.append(f"Primary Asset: {strategy_data['asset']['primary']}")
+        if strategy_data['asset'].get('related'):
+            context_parts.append(f"Related: {', '.join(strategy_data['asset']['related'])}")
+        context_parts.append(f"\nTHESIS: {strategy_data['user_input']['strategy_text']}")
+        if strategy_data['user_input'].get('position_text'):
+            context_parts.append(f"POSITION: {strategy_data['user_input']['position_text']}")
+        if strategy_data['user_input'].get('target'):
+            context_parts.append(f"TARGET: {strategy_data['user_input']['target']}")
+
+        analysis = strategy_data.get('latest_analysis', {})
+        if analysis.get('analyzed_at'):
+            if analysis.get('final_analysis', {}).get('executive_summary'):
+                context_parts.append(f"\nAI Summary: {analysis['final_analysis']['executive_summary']}")
+            if analysis.get('risk_assessment', {}).get('key_risk_summary'):
+                context_parts.append(f"Risks: {analysis['risk_assessment']['key_risk_summary']}")
+            if analysis.get('opportunity_assessment', {}).get('key_opportunity_summary'):
+                context_parts.append(f"Opportunities: {analysis['opportunity_assessment']['key_opportunity_summary']}")
+        context_parts.append("")
+
+    full_context = "\n".join(context_parts) if context_parts else ""
+
+    # Determine context type
+    if request.strategy_id and request.topic_id:
+        context_type = "strategy + market intelligence"
+    elif request.strategy_id:
+        context_type = "user's trading strategy"
+    elif request.topic_id:
+        context_type = "market intelligence"
+    else:
+        context_type = "general financial knowledge"
+
+    return full_context, context_type
+
+
 @app.post("/api/chat")
 def chat(request: ChatRequest):
-    """Agentic chat - LLM decides when to use tools"""
+    """Agentic chat with backend conversation state. Context built once per day."""
     from langchain_anthropic import ChatAnthropic
     from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 
     try:
-        # 1. Load strategy from files if provided
+        username = request.username or "anonymous"
+
+        # 1. Get or create today's conversation
+        conv, is_new = conversation_store.get_or_create(
+            username=username,
+            topic_id=request.topic_id,
+            strategy_id=request.strategy_id
+        )
+
+        # 2. Load strategy if provided
         strategy_data = None
         if request.strategy_id and request.username:
             strategy_data = strategy_manager.get_strategy(request.username, request.strategy_id)
             if not strategy_data:
                 raise HTTPException(status_code=404, detail="Strategy not found")
-        
-        # 2. Get EXCEPTIONAL Neo4j context from Graph API
-        neo_context = None
-        if request.topic_id:
-            try:
-                # Request FULL context with related topics
-                response = requests.post(
-                    f"{GRAPH_API_URL}/neo/build-context",
-                    json={
-                        "topic_id": request.topic_id,
-                        "include_full_articles": True,  # Get full article content
-                        "include_related_topics": True,  # Get related assets
-                        "max_articles": 15  # More articles for better context
-                    },
-                    timeout=15
-                )
-                response.raise_for_status()
-                neo_context = response.json()
-            except Exception as e:
-                print(f"Graph API context unavailable: {e}")
-                # Continue without Neo4j context
-        
-        # 3. Build EXCEPTIONAL context
-        context_parts = []
-        
-        # PART 1: Market Intelligence from Neo4j (FULL CONTENT)
-        if neo_context and neo_context.get("topic_name"):
-            context_parts.append("═══ PRIMARY ASSET INTELLIGENCE ═══")
-            context_parts.append(f"Asset: {neo_context['topic_name']}")
-            context_parts.append("")
-            
-            # Add FULL analysis reports (all sections)
-            reports = neo_context.get("reports", {})
-            if reports:
-                context_parts.append("【COMPLETE ANALYSIS】")
-                # Include ALL key sections, not truncated
-                priority_sections = [
-                    "executive_summary",
-                    "market_dynamics",
-                    "risk_factors",
-                    "opportunity_assessment",
-                    "recent_developments"
-                ]
-                for section in priority_sections:
-                    content = reports.get(section, "")
-                    if content and content.strip():
-                        section_title = section.replace('_', ' ').title()
-                        context_parts.append(f"\n{section_title}:")
-                        context_parts.append(content.strip())  # FULL content, no truncation
-                context_parts.append("")
-            
-            # Add recent developments with FULL article content + SOURCE INFO
-            articles = neo_context.get("articles", [])
-            if articles:
-                context_parts.append("◆ RECENT DEVELOPMENTS (Full Articles):")
-                context_parts.append("")
-                for i, article in enumerate(articles[:10], 1):  # Top 10 articles
-                    # Format: [Article ID] Source - Title
-                    article_id = article.get('id', 'unknown')
-                    source = article.get('source', 'Unknown Source')
-                    title = article.get('title', 'Untitled')
-                    published = article.get('published_at', 'N/A')
-                    
-                    context_parts.append(f"[Article {i}] ({article_id})")
-                    context_parts.append(f"Source: {source}")
-                    context_parts.append(f"Title: {title}")
-                    context_parts.append(f"Published: {published}")
-                    
-                    # Include full content if available
-                    if article.get('content'):
-                        context_parts.append(f"Content: {article['content'][:1000]}...")  # First 1000 chars
-                    elif article.get('summary'):
-                        context_parts.append(f"Summary: {article['summary']}")
-                    
-                    # Include LLM analysis from ABOUT relationship
-                    if article.get('motivation'):
-                        context_parts.append(f"Why Relevant: {article['motivation']}")
-                    if article.get('implications'):
-                        context_parts.append(f"Implications: {article['implications']}")
-                    context_parts.append("")  # Blank line between articles
-                context_parts.append("")
-            
-            # Add RELATED ASSETS with their executive summaries
-            related_topics = neo_context.get("related_topics", [])
-            if related_topics:
-                context_parts.append("【RELATED ASSETS】")
-                for rel in related_topics:
-                    context_parts.append(f"\n• {rel['name']} ({rel['relationship']})")
-                    context_parts.append(f"  {rel['executive_summary']}")
-                context_parts.append("")
-        
-        # PART 2: User's Trading Strategy (FULL CONTEXT)
-        if strategy_data:
-            context_parts.append("═══ USER'S TRADING STRATEGY ═══")
-            context_parts.append(f"Primary Asset: {strategy_data['asset']['primary']}")
-            
-            # Add related assets from strategy
-            if strategy_data['asset'].get('related'):
-                context_parts.append(f"Related Assets: {', '.join(strategy_data['asset']['related'])}")
-            context_parts.append("")
-            
-            context_parts.append("USER'S THESIS:")
-            context_parts.append(strategy_data['user_input']['strategy_text'])
-            context_parts.append("")
-            
-            if strategy_data['user_input'].get('position_text'):
-                context_parts.append("POSITION DETAILS:")
-                context_parts.append(strategy_data['user_input']['position_text'])
-                context_parts.append("")
-            
-            if strategy_data['user_input'].get('target'):
-                context_parts.append(f"TARGET: {strategy_data['user_input']['target']}")
-                context_parts.append("")
-            
-            # Add COMPLETE AI analysis (not truncated)
-            if strategy_data.get('latest_analysis', {}).get('analyzed_at'):
-                context_parts.append("═══ COMPLETE AI ANALYSIS ═══")
-                analysis = strategy_data['latest_analysis']
-                
-                # Add FULL executive summary
-                if analysis.get('final_analysis', {}).get('executive_summary'):
-                    context_parts.append(f"Executive Summary:\n{analysis['final_analysis']['executive_summary']}")
-                    context_parts.append("")
-                
-                # Add FULL risk assessment
-                if analysis.get('risk_assessment', {}).get('key_risk_summary'):
-                    context_parts.append(f"Key Risks:\n{analysis['risk_assessment']['key_risk_summary']}")
-                    context_parts.append("")
-                
-                # Add FULL opportunity assessment
-                if analysis.get('opportunity_assessment', {}).get('key_opportunity_summary'):
-                    context_parts.append(f"Key Opportunities:\n{analysis['opportunity_assessment']['key_opportunity_summary']}")
-                    context_parts.append("")
-                
-                # Add mapped topics from strategy analysis
-                if analysis.get('topic_mapping', {}).get('primary_topics'):
-                    primary = analysis['topic_mapping']['primary_topics']
-                    context_parts.append(f"Primary Topics: {', '.join(primary)}")
-                if analysis.get('topic_mapping', {}).get('driver_topics'):
-                    drivers = analysis['topic_mapping']['driver_topics']
-                    context_parts.append(f"Driver Topics: {', '.join(drivers)}")
-                context_parts.append("")
-                
-                # Get executive summaries for strategy-related topics
-                try:
-                    all_topics = []
-                    if analysis.get('topic_mapping', {}).get('primary_topics'):
-                        all_topics.extend(analysis['topic_mapping']['primary_topics'])
-                    if analysis.get('topic_mapping', {}).get('driver_topics'):
-                        all_topics.extend(analysis['topic_mapping']['driver_topics'])
-                    
-                    if all_topics:
-                        context_parts.append("【STRATEGY-RELATED ASSETS】")
-                        for topic_name in all_topics[:5]:  # Top 5
-                            # Try to get executive summary for this topic
-                            try:
-                                # Find topic ID by name
-                                topic_search = requests.get(
-                                    f"{GRAPH_API_URL}/neo/topics/all",
-                                    timeout=5
-                                )
-                                if topic_search.status_code == 200:
-                                    topics = topic_search.json().get("topics", [])
-                                    matching_topic = next((t for t in topics if t["name"].lower() == topic_name.lower()), None)
-                                    if matching_topic:
-                                        # Get executive summary
-                                        topic_context = requests.post(
-                                            f"{GRAPH_API_URL}/neo/build-context",
-                                            json={"topic_id": matching_topic["id"]},
-                                            timeout=5
-                                        )
-                                        if topic_context.status_code == 200:
-                                            topic_data = topic_context.json()
-                                            exec_summary = topic_data.get("reports", {}).get("executive_summary", "")
-                                            if exec_summary:
-                                                context_parts.append(f"\n• {topic_name}:")
-                                                context_parts.append(f"  {exec_summary[:500]}...")  # First 500 chars
-                            except:
-                                pass  # Skip if can't fetch
-                        context_parts.append("")
-                except:
-                    pass  # Skip if error
-        
-        full_context = "\n".join(context_parts) if context_parts else ""
 
-        # Determine context type
-        if request.strategy_id and request.topic_id:
-            context_type = "strategy + market intelligence"
-        elif request.strategy_id:
-            context_type = "user's trading strategy"
-        elif request.topic_id:
-            context_type = "market intelligence"
-        else:
-            context_type = "general financial knowledge"
+        # 3. If new conversation, build context ONCE
+        if is_new:
+            full_context, context_type = _build_full_context(request, strategy_data)
 
-        # 4. Build chat history
-        messages = []
-        for msg in request.history:
-            if msg.get("role") == "user":
-                messages.append(HumanMessage(content=msg["content"]))
-            elif msg.get("role") == "assistant":
-                messages.append(AIMessage(content=msg["content"]))
-
-        messages.append(HumanMessage(content=request.message))
-
-        # 5. Define tool for the agent
-        tools = [
-            {
-                "name": "search_news",
-                "description": "Search recent news articles (past 14 days) when you need current information about markets, events, or topics not covered in the provided context. Use this when: (1) user asks about recent/latest/current events, (2) you lack sufficient context to answer, (3) you need to verify or expand on information.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Search query - use a statement not a question. Example: 'Federal Reserve interest rate policy impact' instead of 'What is the Fed doing?'"
-                        }
-                    },
-                    "required": ["query"]
-                }
-            }
-        ]
-
-        # 6. Build system prompt
-        system_prompt = f"""You are Saga—an elite financial intelligence analyst with access to live news search.
+            system_prompt = f"""You are Saga—an elite financial intelligence analyst with access to live news search.
 
 ═══ AVAILABLE TOOL ═══
 You have ONE tool: search_news
 - Use it when you need current market information not in your context
 - Use it when user asks about "latest", "recent", "current", "today", "news"
-- Use it when your context is insufficient to answer properly
 - You can call it multiple times with different queries if needed
 
 ═══ CONTEXT ═══
@@ -500,7 +385,6 @@ Type: {context_type}
 {full_context if full_context else "No pre-loaded context. Use search_news tool if you need current information."}
 
 ═══ RESPONSE STYLE ═══
-After gathering information (via tool or from context):
 - **Answer**: Direct 2-3 sentence response with causal chain
 - **Key Insight**: Most critical non-obvious factor
 - **Risk/Opportunity**: What could go wrong/right
@@ -508,61 +392,106 @@ After gathering information (via tool or from context):
 - Max 150 words in final response
 - End with a strategic follow-up question"""
 
-        # 7. Call LLM with tools (agentic loop)
+            conv.messages.append(Message(
+                role=MessageRole.CONTEXT,
+                content=system_prompt,
+                timestamp=datetime.now()
+            ))
+
+        # 4. Add user message
+        conv.messages.append(Message(
+            role=MessageRole.USER,
+            content=request.message,
+            timestamp=datetime.now()
+        ))
+
+        # 5. Test mode - return context without calling LLM
         if request.test:
+            conversation_store.save(conv)
             return {
                 "test_mode": True,
-                "context_type": context_type,
-                "system_prompt": system_prompt,
-                "full_context": full_context,
-                "tools": tools,
-                "message": request.message
+                "conversation_id": conv.id,
+                "is_new_conversation": is_new,
+                "messages": conv.get_visible_messages(limit=10)
             }
 
-        # Initialize LLM with tools
+        # 6. Build LLM messages from conversation history
+        llm_messages = []
+        for msg in conv.messages:
+            if msg.role == MessageRole.CONTEXT:
+                llm_messages.append(SystemMessage(content=msg.content))
+            elif msg.role == MessageRole.SEARCH:
+                llm_messages.append(HumanMessage(content=f"[Previous search results]\n{msg.content}"))
+            elif msg.role == MessageRole.USER:
+                llm_messages.append(HumanMessage(content=msg.content))
+            elif msg.role == MessageRole.ASSISTANT:
+                llm_messages.append(AIMessage(content=msg.content))
+
+        # 7. Define tool
+        tools = [{
+            "name": "search_news",
+            "description": "Search recent news articles (past 14 days). Use when you need current information.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query as a statement, not a question"}
+                },
+                "required": ["query"]
+            }
+        }]
+
+        # 8. Agentic loop
         llm = ChatAnthropic(model="claude-sonnet-4-5-20250929", temperature=0.7)
+        search_results = []
 
-        # Agentic loop - let LLM decide when to use tools
-        current_messages = [SystemMessage(content=system_prompt)] + messages
-        max_iterations = 5  # Prevent infinite loops
+        for _ in range(5):  # Max iterations
+            response = llm.invoke(llm_messages, tools=tools)
 
-        for iteration in range(max_iterations):
-            response = llm.invoke(current_messages, tools=tools)
-
-            # Check if LLM wants to use a tool
             if response.tool_calls:
-                # Process each tool call
                 for tool_call in response.tool_calls:
                     if tool_call["name"] == "search_news":
                         query = tool_call["args"].get("query", request.message)
-                        logger.info(f"Agent calling search_news: {query[:50]}...")
+                        logger.info(f"Agent searching: {query[:50]}...")
 
-                        # Execute the tool
                         tool_result = _execute_news_search(query)
+                        search_results.append({"query": query, "result": tool_result})
 
-                        # Add assistant message with tool call
-                        current_messages.append(response)
-
-                        # Add tool result
-                        current_messages.append(
-                            ToolMessage(
-                                content=tool_result,
-                                tool_call_id=tool_call["id"]
-                            )
-                        )
-
-                # Continue the loop to let LLM process tool results
+                        llm_messages.append(response)
+                        llm_messages.append(ToolMessage(content=tool_result, tool_call_id=tool_call["id"]))
                 continue
             else:
-                # No tool calls - LLM is ready to respond
-                return {"response": response.content}
+                break
 
-        # Fallback if max iterations reached
-        return {"response": response.content if hasattr(response, 'content') else "I encountered an issue processing your request."}
-        
+        # 9. Store search results as hidden messages (for future context)
+        for sr in search_results:
+            conv.messages.append(Message(
+                role=MessageRole.SEARCH,
+                content=f"[Search: {sr['query']}]\n{sr['result']}",
+                timestamp=datetime.now()
+            ))
+
+        # 10. Store assistant response
+        response_text = response.content if hasattr(response, 'content') else "I encountered an issue."
+        conv.messages.append(Message(
+            role=MessageRole.ASSISTANT,
+            content=response_text,
+            timestamp=datetime.now()
+        ))
+
+        # 11. Save conversation
+        conversation_store.save(conv)
+
+        # 12. Return response + visible messages
+        return {
+            "response": response_text,
+            "conversation_id": conv.id,
+            "messages": conv.get_visible_messages(limit=10)
+        }
+
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
 
 
@@ -610,16 +539,10 @@ def rewrite_strategy_section(request: RewriteSectionRequest, cookies: Request = 
         new_content = result.get("new_content", "")
         
         # 2. Use existing chat() to generate contextual comment
-        # Build history from messages + add context about the rewrite
-        chat_history = [{"role": m.get("role", "user"), "content": m.get("content", "")} 
-                        for m in request.messages[-5:]] if request.messages else []
-        
-        # Add the rewrite context as a system-injected user message
         rewrite_context_msg = f"[I just updated the {section_title} section based on: '{request.feedback}'. Briefly confirm what was changed in 1-2 sentences, starting with ✅]"
-        
+
         chat_request = ChatRequest(
             message=rewrite_context_msg,
-            history=chat_history,
             strategy_id=request.strategy_id,
             username=username,
         )
