@@ -548,11 +548,41 @@ def get_all_topics():
 def get_topic_details(topic_id: str):
     """
     Get detailed topic information including article stats
-    
+
     Proxies to Graph API for Neo4j queries
     """
     try:
         response = requests.get(f"{GRAPH_API_URL}/neo/reports/{topic_id}", timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
+
+
+@router.get("/topics-recent")
+def get_recent_topics(days: int = Query(default=7, le=30)):
+    """
+    Get recently created topics grouped by day.
+
+    Returns: {today: [...], yesterday: [...], this_week: [...]}
+    """
+    try:
+        response = requests.get(f"{GRAPH_API_URL}/neo/topics/recent?days={days}", timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
+
+
+@router.delete("/topics/{topic_id}")
+def delete_topic(topic_id: str):
+    """
+    Delete a topic from Neo4j.
+
+    Removes the topic and all its relationships.
+    """
+    try:
+        response = requests.delete(f"{GRAPH_API_URL}/neo/topics/{topic_id}", timeout=10)
         response.raise_for_status()
         return response.json()
     except Exception as e:

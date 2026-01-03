@@ -92,6 +92,12 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+class ContactFormRequest(BaseModel):
+    name: str
+    email: str
+    company: str
+    message: str = ""
+
 class ChatRequest(BaseModel):
     message: str
     topic_id: Optional[str] = None
@@ -571,6 +577,104 @@ def rewrite_strategy_section(request: RewriteSectionRequest, cookies: Request = 
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Rewrite failed: {str(e)}")
+
+
+# ============ CONTACT FORM ============
+CONTACTS_FILE = os.path.join(os.path.dirname(__file__), "data", "contacts.json")
+NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")  # e.g., "saga-leads"
+
+
+def _send_ntfy_ping():
+    """Send a privacy-safe ping notification (no PII)"""
+    if not NTFY_TOPIC:
+        return
+    try:
+        requests.post(
+            f"https://ntfy.sh/{NTFY_TOPIC}",
+            data="New lead received - check admin panel".encode("utf-8"),
+            headers={"Title": "Saga: New Lead", "Priority": "high", "Tags": "briefcase"},
+            timeout=5
+        )
+        logger.info(f"📱 Ntfy ping sent to {NTFY_TOPIC}")
+    except Exception as e:
+        logger.warning(f"Ntfy ping failed: {e}")
+
+
+def _load_contacts() -> list:
+    """Load contacts from disk"""
+    if os.path.exists(CONTACTS_FILE):
+        with open(CONTACTS_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+
+def _save_contacts(contacts: list):
+    """Save contacts to disk"""
+    os.makedirs(os.path.dirname(CONTACTS_FILE), exist_ok=True)
+    with open(CONTACTS_FILE, "w") as f:
+        json.dump(contacts, f, indent=2)
+
+
+@app.post("/api/contact")
+def submit_contact(request: ContactFormRequest):
+    """Save contact form submission to disk"""
+    try:
+        contact = {
+            "id": datetime.now().strftime("%Y%m%d%H%M%S"),
+            "name": request.name,
+            "email": request.email,
+            "company": request.company,
+            "message": request.message,
+            "submitted_at": datetime.now().isoformat(),
+            "status": "new"
+        }
+
+        contacts = _load_contacts()
+        contacts.append(contact)
+        _save_contacts(contacts)
+
+        logger.info(f"📬 New contact: {request.name} ({request.email}) from {request.company}")
+
+        # Send privacy-safe ntfy ping (no PII in notification)
+        _send_ntfy_ping()
+
+        return {"success": True, "message": "Thank you for reaching out!"}
+
+    except Exception as e:
+        logger.error(f"Contact form error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to submit contact form")
+
+
+@app.get("/api/admin/contacts")
+def get_contacts():
+    """Get all contact form submissions (admin only)"""
+    contacts = _load_contacts()
+    # Sort by date descending (newest first)
+    contacts.sort(key=lambda x: x.get("submitted_at", ""), reverse=True)
+
+    # Count by status
+    new_count = sum(1 for c in contacts if c.get("status") == "new")
+
+    return {
+        "contacts": contacts,
+        "total": len(contacts),
+        "new": new_count
+    }
+
+
+@app.patch("/api/admin/contacts/{contact_id}")
+def update_contact_status(contact_id: str, status: str = Query(...)):
+    """Update contact status (e.g., 'new' -> 'contacted' -> 'closed')"""
+    contacts = _load_contacts()
+
+    for contact in contacts:
+        if contact.get("id") == contact_id:
+            contact["status"] = status
+            contact["updated_at"] = datetime.now().isoformat()
+            _save_contacts(contacts)
+            return {"success": True, "contact": contact}
+
+    raise HTTPException(status_code=404, detail="Contact not found")
 
 
 # ============ HEALTH ============
