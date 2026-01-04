@@ -273,6 +273,56 @@ def add_strategy_finding(username: str, strategy_id: str, mode: str, finding: Di
     return {"success": True, "mode": mode, "replaces": replaces}
 
 
+class ImproveStrategyTextRequest(BaseModel):
+    """Request body for improving strategy text"""
+    current_text: str  # The strategy_text to improve
+    asset: str  # Primary asset for context
+    position_text: Optional[str] = None  # Optional position/outlook text
+
+
+@router.post("/users/{username}/strategies/{strategy_id}/improve-text")
+def improve_strategy_text(username: str, strategy_id: str, request: ImproveStrategyTextRequest):
+    """
+    Improve the user's strategy thesis text using AI.
+
+    Proxies to graph-functions /strategy/improve-text endpoint.
+    Returns an enhanced version while preserving user's voice and core ideas.
+
+    This embodies Saga's philosophy: AI AMPLIFIES human judgment, doesn't replace it.
+    """
+    # Verify strategy exists
+    strategy = storage.get_strategy(username, strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    try:
+        # Proxy to graph-functions
+        response = requests.post(
+            f"{GRAPH_API_URL}/strategy/improve-text",
+            json={
+                "username": username,
+                "strategy_id": strategy_id,
+                "current_text": request.current_text,
+                "asset": request.asset,
+                "position_text": request.position_text,
+            },
+            timeout=60  # LLM calls can take a moment
+        )
+
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Graph API error: {response.text}"
+            )
+
+        return response.json()
+
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Request timed out - please try again")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Failed to reach graph-functions: {str(e)}")
+
+
 @router.post("/users/{username}/strategies/{strategy_id}/set-default/{is_default}")
 def set_strategy_default(username: str, strategy_id: str, is_default: bool):
     """Toggle is_default flag (Admin only). When set to true, copies to all users. When false, removes from all users."""

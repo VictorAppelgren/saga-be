@@ -486,30 +486,21 @@ def get_admin_summary() -> Dict:
 
 def _get_graph_state() -> Dict:
     """
-    Query Neo4j for current graph state
-    
+    Query Neo4j for current graph state via Graph API
+
     Returns counts and averages for capacity monitoring
     """
     try:
-        # Query for basic counts
-        response = requests.post(
-            f"{GRAPH_API_URL}/neo/build-context",
-            json={},
+        response = requests.get(
+            f"{GRAPH_API_URL}/neo/graph-state",
             timeout=5
         )
-        
+
         if response.status_code != 200:
             return _empty_graph_state()
-        
-        # For now, return basic structure
-        # TODO: Add specific Cypher queries for detailed stats
-        return {
-            "topics": 88,  # Placeholder - will be replaced with real query
-            "articles": 1250,
-            "connections": 3400,
-            "avg_articles_per_topic": 14.2
-        }
-        
+
+        return response.json()
+
     except Exception as e:
         print(f"Error querying graph state: {e}")
         return _empty_graph_state()
