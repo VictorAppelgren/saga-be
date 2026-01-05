@@ -496,6 +496,7 @@ def get_admin_summary() -> Dict:
         "engagement": {
             "sessions": events.get("user_session_started", 0),
             "strategies_created": events.get("strategy_created", 0),
+            "strategies_viewed": events.get("strategy_viewed", 0),
             "reports_viewed": events.get("report_viewed", 0),
             "section_rewrites": events.get("analysis_section_rewrite", 0)
         },

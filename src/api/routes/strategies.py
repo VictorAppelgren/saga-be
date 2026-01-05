@@ -110,6 +110,10 @@ def get_strategy(username: str, strategy_id: str):
     strategy = storage.get_strategy(username, strategy_id)
     if not strategy:
         raise HTTPException(status_code=404, detail="Strategy not found")
+
+    # Track strategy view
+    track_event("strategy_viewed", f"{username}/{strategy_id}")
+
     return strategy
 
 

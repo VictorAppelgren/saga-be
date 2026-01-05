@@ -28,6 +28,7 @@ from src.storage.user_manager import UserManager
 from src.storage.article_manager import ArticleStorageManager
 from src.storage.strategy_manager import StrategyStorageManager
 from src.storage.conversations import conversation_store
+from src.storage.session_manager import session_manager
 from src.models.conversation import Message, MessageRole
 
 # Import API routers
@@ -63,6 +64,9 @@ strategy_manager = StrategyStorageManager()
 
 # Graph API URL
 GRAPH_API_URL = os.getenv("GRAPH_API_URL", "http://localhost:8001")
+
+# Anthropic API Key (for chat)
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # Initialize FastAPI
 app = FastAPI(
@@ -132,7 +136,7 @@ class ChatRequest(BaseModel):
 # ============ AUTH & USERS ============
 @app.post("/api/login")
 def login(request: LoginRequest, response: Response):
-    """Authenticate user"""
+    """Authenticate user and create session"""
     user = user_manager.authenticate(request.username, request.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -140,10 +144,8 @@ def login(request: LoginRequest, response: Response):
     # Track user session
     track_event("user_session_started", request.username)
 
-    # Generate session token (simple: username + timestamp hash)
-    import hashlib
-    import time
-    session_token = hashlib.sha256(f"{user['username']}{time.time()}".encode()).hexdigest()
+    # Create persistent session (24h TTL)
+    session_token = session_manager.create_session(user['username'], ttl_hours=24)
 
     # Set secure HTTP-only cookie
     response.set_cookie(
@@ -155,12 +157,46 @@ def login(request: LoginRequest, response: Response):
         samesite="lax"
     )
 
-    # Store session in memory (simple dict for now)
-    if not hasattr(app.state, 'sessions'):
-        app.state.sessions = {}
-    app.state.sessions[session_token] = user['username']
-
     return user
+
+
+@app.post("/api/logout")
+def logout(request: Request, response: Response):
+    """Invalidate session and clear cookie"""
+    token = request.cookies.get("session_token")
+    if token:
+        session_manager.invalidate_session(token)
+
+    # Clear the cookie
+    response.delete_cookie(key="session_token", path="/")
+    return {"success": True}
+
+
+@app.get("/api/validate-session")
+def validate_session(request: Request):
+    """
+    Validate session token from cookie.
+    Used by nginx auth_request - returns 200 if valid, 401 if invalid.
+    This endpoint is called by nginx BEFORE proxying to other /api/ routes.
+    """
+    token = request.cookies.get("session_token")
+
+    # Also check X-API-Key for worker requests (they bypass session auth)
+    api_key = request.headers.get("X-API-Key")
+    if api_key:
+        # API key validation is handled by nginx map, but double-check here
+        # If request has API key and reached here, nginx already validated it
+        return Response(status_code=200)
+
+    # Validate session token
+    username = session_manager.validate_session(token)
+    if username:
+        return Response(
+            status_code=200,
+            headers={"X-Auth-User": username}  # Pass username to upstream
+        )
+
+    return Response(status_code=401)
 
 
 @app.get("/api/users")
@@ -476,7 +512,9 @@ Type: {context_type}
         }]
 
         # 8. Agentic loop
-        llm = ChatAnthropic(model="claude-sonnet-4-5-20250929", temperature=0.7)
+        if not ANTHROPIC_API_KEY:
+            raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
+        llm = ChatAnthropic(model="claude-sonnet-4-5-20250929", temperature=0.7, api_key=ANTHROPIC_API_KEY)
         search_results = []
 
         for _ in range(5):  # Max iterations
