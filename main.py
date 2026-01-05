@@ -33,6 +33,29 @@ from src.models.conversation import Message, MessageRole
 # Import API routers
 from src.api.routes import articles, admin, strategies, stats
 
+# Import stats tracking (same as stats router but as a sync helper)
+from datetime import date as date_helper
+from pathlib import Path
+import json as json_helper
+
+def track_event(event_type: str, message: str = None):
+    """Track a stat event (sync helper for backend routes)."""
+    try:
+        today = date_helper.today().isoformat()
+        stats_dir = Path("stats/stats")
+        stats_dir.mkdir(parents=True, exist_ok=True)
+        stats_file = stats_dir / f"stats_{today}.json"
+
+        if stats_file.exists():
+            stats_data = json_helper.loads(stats_file.read_text())
+        else:
+            stats_data = {"date": today, "events": {}}
+
+        stats_data["events"][event_type] = stats_data["events"].get(event_type, 0) + 1
+        stats_file.write_text(json_helper.dumps(stats_data, indent=2))
+    except Exception as e:
+        logger.warning(f"Stats tracking failed: {e}")
+
 # Initialize managers
 user_manager = UserManager()
 article_manager = ArticleStorageManager()
@@ -113,12 +136,15 @@ def login(request: LoginRequest, response: Response):
     user = user_manager.authenticate(request.username, request.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
+    # Track user session
+    track_event("user_session_started", request.username)
+
     # Generate session token (simple: username + timestamp hash)
     import hashlib
     import time
     session_token = hashlib.sha256(f"{user['username']}{time.time()}".encode()).hexdigest()
-    
+
     # Set secure HTTP-only cookie
     response.set_cookie(
         key="session_token",
@@ -128,12 +154,12 @@ def login(request: LoginRequest, response: Response):
         max_age=86400,  # 24 hours
         samesite="lax"
     )
-    
+
     # Store session in memory (simple dict for now)
     if not hasattr(app.state, 'sessions'):
         app.state.sessions = {}
     app.state.sessions[session_token] = user['username']
-    
+
     return user
 
 
@@ -215,6 +241,9 @@ def get_interests(username: str = Query(...)):
 @app.get("/api/reports/{topic_id}")
 def get_report(topic_id: str):
     """Get report - proxy to Graph API"""
+    # Track report view
+    track_event("report_viewed", topic_id)
+
     try:
         response = requests.get(
             f"{GRAPH_API_URL}/neo/reports/{topic_id}",

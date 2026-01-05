@@ -9,6 +9,27 @@ import requests
 from src.storage.strategy_manager import StrategyStorageManager
 from src.storage.user_manager import UserManager
 
+# Stats tracking helper (same as main.py)
+from datetime import date as date_helper
+from pathlib import Path
+import json as json_helper
+
+def track_event(event_type: str, message: str = None):
+    """Track a stat event (sync helper)."""
+    try:
+        today = date_helper.today().isoformat()
+        stats_dir = Path("stats/stats")
+        stats_dir.mkdir(parents=True, exist_ok=True)
+        stats_file = stats_dir / f"stats_{today}.json"
+        if stats_file.exists():
+            stats_data = json_helper.loads(stats_file.read_text())
+        else:
+            stats_data = {"date": today, "events": {}}
+        stats_data["events"][event_type] = stats_data["events"].get(event_type, 0) + 1
+        stats_file.write_text(json_helper.dumps(stats_data, indent=2))
+    except Exception:
+        pass  # Non-blocking
+
 # Graph API URL for triggering analysis
 GRAPH_API_URL = os.getenv("GRAPH_API_URL", "http://localhost:8001")
 
@@ -73,10 +94,13 @@ def list_user_strategies(username: str):
 def create_strategy(username: str, strategy: Dict[str, Any], background_tasks: BackgroundTasks):
     """Create new strategy"""
     strategy_data = storage.create_strategy(username, strategy)
-    
+
+    # Track strategy creation
+    track_event("strategy_created", username)
+
     # Trigger analysis in background
     background_tasks.add_task(trigger_strategy_analysis, username, strategy_data["id"])
-    
+
     return strategy_data
 
 

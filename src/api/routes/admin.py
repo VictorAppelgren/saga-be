@@ -482,6 +482,23 @@ def get_admin_summary() -> Dict:
             "triggered": events.get("strategy_analysis_triggered", 0),
             "completed": events.get("strategy_analysis_completed", 0)
         },
+        "exploration": {
+            "started": events.get("exploration_started", 0),
+            "accepted": events.get("exploration_accepted", 0),
+            "rejected": events.get("exploration_rejected", 0)
+        },
+        "llm_calls": {
+            "simple": events.get("llm_call_simple", 0),
+            "medium": events.get("llm_call_medium", 0),
+            "complex": events.get("llm_call_complex", 0),
+            "fast": events.get("llm_call_fast", 0)
+        },
+        "engagement": {
+            "sessions": events.get("user_session_started", 0),
+            "strategies_created": events.get("strategy_created", 0),
+            "reports_viewed": events.get("report_viewed", 0),
+            "section_rewrites": events.get("analysis_section_rewrite", 0)
+        },
         "graph_state": graph_state,
         "errors": events.get("error_occurred", 0)
     }
