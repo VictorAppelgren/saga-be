@@ -12,6 +12,9 @@ import requests
 
 from src.storage.article_manager import ArticleStorageManager
 from src.storage.worker_registry import get_worker_summary
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -490,19 +493,29 @@ def _get_graph_state() -> Dict:
 
     Returns counts and averages for capacity monitoring
     """
+    url = f"{GRAPH_API_URL}/neo/graph-state"
+    logger.info(f"[GRAPH_STATE] Fetching from: {url}")
+
     try:
-        response = requests.get(
-            f"{GRAPH_API_URL}/neo/graph-state",
-            timeout=5
-        )
+        response = requests.get(url, timeout=5)
+        logger.info(f"[GRAPH_STATE] Response status: {response.status_code}")
 
         if response.status_code != 200:
+            logger.error(f"[GRAPH_STATE] Non-200 response: {response.status_code} - {response.text[:200]}")
             return _empty_graph_state()
 
-        return response.json()
+        data = response.json()
+        logger.info(f"[GRAPH_STATE] Success: topics={data.get('topics')}, articles={data.get('articles')}")
+        return data
 
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"[GRAPH_STATE] Connection error to {url}: {e}")
+        return _empty_graph_state()
+    except requests.exceptions.Timeout as e:
+        logger.error(f"[GRAPH_STATE] Timeout connecting to {url}: {e}")
+        return _empty_graph_state()
     except Exception as e:
-        print(f"Error querying graph state: {e}")
+        logger.error(f"[GRAPH_STATE] Unexpected error: {type(e).__name__}: {e}")
         return _empty_graph_state()
 
 
