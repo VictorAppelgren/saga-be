@@ -521,16 +521,18 @@ Type: {context_type}
             response = llm.invoke(llm_messages, tools=tools)
 
             if response.tool_calls:
+                # Add assistant response with tool calls ONCE
+                llm_messages.append(response)
+
+                # Execute ALL tool calls and add ALL results
                 for tool_call in response.tool_calls:
                     if tool_call["name"] == "search_news":
                         query = tool_call["args"].get("query", request.message)
                         logger.info(f"Agent searching: {query[:50]}...")
-
                         tool_result = _execute_news_search(query)
                         search_results.append({"query": query, "result": tool_result})
-
-                        llm_messages.append(response)
                         llm_messages.append(ToolMessage(content=tool_result, tool_call_id=tool_call["id"]))
+
                 continue
             else:
                 break
