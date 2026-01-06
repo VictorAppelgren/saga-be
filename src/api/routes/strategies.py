@@ -73,6 +73,7 @@ class StrategyResponse(BaseModel):
     latest_analysis: Optional[Dict[str, Any]] = None
     analysis_history: Optional[List[Dict[str, Any]]] = None
     dashboard_question: Optional[str] = None
+    exploration_findings: Optional[Dict[str, Any]] = None
 
 
 # Routes
