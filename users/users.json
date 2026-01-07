@@ -15,6 +15,20 @@
       ]
     },
     {
+      "username": "Maod",
+      "password": "maod123",
+      "is_admin": true,
+      "accessible_topics": [
+        "brent",
+        "eurusd",
+        "dxy",
+        "copper",
+        "fed_policy",
+        "ecb_policy",
+        "euribor"
+      ]
+    },
+    {
       "username": "William", 
       "password": "w456",
       "is_admin": false,
