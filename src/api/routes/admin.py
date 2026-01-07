@@ -488,10 +488,12 @@ def get_admin_summary() -> Dict:
             "rejected": events.get("exploration_rejected", 0)
         },
         "llm_calls": {
-            "simple": events.get("llm_call_simple", 0),
-            "medium": events.get("llm_call_medium", 0),
-            "complex": events.get("llm_call_complex", 0),
-            "fast": events.get("llm_call_fast", 0)
+            # Tier totals (llm_simple, llm_medium, llm_complex, llm_fast)
+            "tiers": {k.replace("llm_", ""): v for k, v in events.items()
+                      if k.startswith("llm_") and not k.startswith("llm_server_")},
+            # Per-server breakdown (llm_server_external_a, llm_server_deepseek_r1_free, etc.)
+            "servers": {k.replace("llm_server_", ""): v for k, v in events.items()
+                        if k.startswith("llm_server_")},
         },
         "engagement": {
             "sessions": events.get("user_session_started", 0),
