@@ -199,6 +199,31 @@ def validate_session(request: Request):
     return Response(status_code=401)
 
 
+@app.get("/api/me")
+def get_current_user(request: Request):
+    """
+    Get current user info from session token.
+    Used by frontend for server-side auth validation.
+    Returns user data including is_admin flag.
+    """
+    token = request.cookies.get("session_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="No session token")
+
+    username = session_manager.validate_session(token)
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    user = user_manager.get_user(username)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return {
+        "username": user["username"],
+        "is_admin": user.get("is_admin", False)
+    }
+
+
 @app.get("/api/users")
 def list_users():
     """Get all users (for saga-graph to iterate over)"""
