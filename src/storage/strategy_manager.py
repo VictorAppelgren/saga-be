@@ -1,8 +1,10 @@
 """Strategy Storage Manager - Simple file-based storage"""
 import os
 import json
+import random
+import string
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Set
 from datetime import datetime
 
 
@@ -295,6 +297,26 @@ class StrategyStorageManager:
         key = "risks" if mode == "risk" else "opportunities"
         return findings.get(key, [])
 
+    def _generate_finding_id(self, mode: str, existing_ids: Set[str]) -> str:
+        """Generate a unique finding ID.
+
+        Format: {prefix}_{9 chars}
+        - Risk: R_ABC123XYZ
+        - Opportunity: O_ABC123XYZ
+        """
+        prefix = "R" if mode == "risk" else "O"
+        charset = string.ascii_uppercase + string.digits
+
+        for _ in range(100):  # Max attempts
+            suffix = ''.join(random.choices(charset, k=9))
+            new_id = f"{prefix}_{suffix}"
+            if new_id not in existing_ids:
+                return new_id
+
+        # Fallback with timestamp
+        import time
+        return f"{prefix}_{int(time.time())}"
+
     def save_finding(self, username: str, strategy_id: str, mode: str, finding: Dict, replaces: Optional[int] = None) -> bool:
         """Save an exploration finding to strategy.
 
@@ -325,8 +347,17 @@ class StrategyStorageManager:
 
         findings_list = strategy["exploration_findings"][key]
 
-        # Add timestamp
+        # Collect existing IDs to avoid collisions
+        existing_ids = {f.get("id") for f in findings_list if f.get("id")}
+
+        # Generate unique finding ID if not provided
+        if not finding.get("id"):
+            finding["id"] = self._generate_finding_id(mode, existing_ids)
+
+        # Add timestamp and strategy reference
         finding["added_at"] = datetime.now().isoformat()
+        finding["strategy_id"] = strategy_id
+        finding["username"] = username
 
         if replaces is not None:
             # Replace existing slot (1-indexed)
@@ -349,3 +380,50 @@ class StrategyStorageManager:
             json.dump(strategy, f, indent=2)
 
         return True
+
+    def get_finding_by_id(self, finding_id: str) -> Optional[Dict]:
+        """Find a finding by its unique ID across all strategies.
+
+        Args:
+            finding_id: Finding ID (R_XXXXXXXXX or O_XXXXXXXXX)
+
+        Returns:
+            Finding dict with strategy context, or None if not found
+        """
+        if not finding_id or len(finding_id) != 11:
+            return None
+
+        # Determine mode from prefix
+        if finding_id.startswith("R_"):
+            mode = "risk"
+        elif finding_id.startswith("O_"):
+            mode = "opportunity"
+        else:
+            return None
+
+        key = "risks" if mode == "risk" else "opportunities"
+
+        # Search all users and strategies
+        for user_dir in self.users_dir.iterdir():
+            if not user_dir.is_dir() or user_dir.name.startswith('.'):
+                continue
+
+            for strategy_file in user_dir.glob("strategy_*.json"):
+                try:
+                    with open(strategy_file, 'r') as f:
+                        strategy = json.load(f)
+
+                    findings = strategy.get("exploration_findings", {}).get(key, [])
+                    for finding in findings:
+                        if finding.get("id") == finding_id:
+                            # Add context
+                            finding["mode"] = mode
+                            finding["username"] = user_dir.name
+                            finding["strategy_id"] = strategy.get("id")
+                            finding["strategy_asset"] = strategy.get("asset", {}).get("primary", "")
+                            return finding
+
+                except (json.JSONDecodeError, IOError):
+                    continue
+
+        return None

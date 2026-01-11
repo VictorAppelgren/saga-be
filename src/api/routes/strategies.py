@@ -1,4 +1,5 @@
 """Strategy API Routes"""
+import logging
 from fastapi import APIRouter, HTTPException, Header, BackgroundTasks
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -8,6 +9,8 @@ import requests
 
 from src.storage.strategy_manager import StrategyStorageManager
 from src.storage.user_manager import UserManager
+
+logger = logging.getLogger(__name__)
 
 # Stats tracking helper (same as main.py)
 from datetime import date as date_helper
@@ -42,13 +45,21 @@ user_manager = UserManager()
 def trigger_strategy_analysis(username: str, strategy_id: str):
     """Trigger strategy analysis in background (non-blocking)"""
     try:
-        requests.post(
+        logger.info(f"Triggering analysis for {username}/{strategy_id}")
+        response = requests.post(
             f"{GRAPH_API_URL}/trigger/strategy-analysis",
             json={"username": username, "strategy_id": strategy_id},
             timeout=2
         )
+        logger.info(f"Trigger response for {username}/{strategy_id}: {response.status_code}")
+        track_event("strategy_analysis_triggered", f"{username}/{strategy_id}")
+    except requests.exceptions.Timeout:
+        # Timeout is OK - the graph API accepted the request and is processing in background
+        logger.info(f"Trigger timed out (expected) for {username}/{strategy_id} - analysis running in background")
+        track_event("strategy_analysis_triggered", f"{username}/{strategy_id}")
     except Exception as e:
-        print(f"⚠️  Failed to trigger analysis for {username}/{strategy_id}: {e}")
+        logger.error(f"Failed to trigger analysis for {username}/{strategy_id}: {e}")
+        track_event("strategy_analysis_trigger_failed", f"{username}/{strategy_id}")
 
 
 # Models
@@ -122,21 +133,25 @@ def get_strategy(username: str, strategy_id: str):
 def update_strategy(username: str, strategy_id: str, updates: Dict[str, Any], background_tasks: BackgroundTasks):
     """
     Update strategy user_input fields ONLY.
-    
+
     SECURITY: This endpoint ONLY allows updating user-editable fields to prevent
     accidental overwrites of system-generated data (analysis, dashboard_question, etc.)
-    
+
     Allowed updates:
     - user_input.strategy_text
-    - user_input.position_text  
+    - user_input.position_text
     - user_input.target
     """
     existing = storage.get_strategy(username, strategy_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Strategy not found")
-    
-    # PREVENT editing default strategies
-    if existing.get("is_default", False):
+
+    # Check if user is admin
+    user = user_manager.get_user(username)
+    is_admin = user and user.get("is_admin", False)
+
+    # PREVENT editing default strategies (unless admin)
+    if existing.get("is_default", False) and not is_admin:
         raise HTTPException(status_code=403, detail="Cannot edit default strategies")
     
     # WHITELIST: Only allow updating specific user_input fields
@@ -161,10 +176,13 @@ def update_strategy(username: str, strategy_id: str, updates: Dict[str, Any], ba
     existing["updated_at"] = datetime.now().isoformat()
     
     saved_id = storage.save_strategy(username, existing)
-    
+
+    # Track strategy update
+    track_event("strategy_updated", f"{username}/{saved_id}")
+
     # Trigger analysis in background
     background_tasks.add_task(trigger_strategy_analysis, username, saved_id)
-    
+
     return storage.get_strategy(username, saved_id)
 
 
@@ -383,4 +401,43 @@ def set_strategy_default(username: str, strategy_id: str, is_default: bool):
         "strategy_id": strategy_id,
         "is_default": is_default,
         "message": message
+    }
+
+
+@router.get("/findings/{finding_id}")
+def get_finding_by_id(finding_id: str):
+    """
+    Get a finding by its unique ID (searches all strategies).
+
+    Finding IDs:
+    - R_XXXXXXXXX = Risk finding
+    - O_XXXXXXXXX = Opportunity finding
+
+    Returns the finding with strategy context.
+    """
+    # Validate format
+    if not finding_id or len(finding_id) != 11:
+        raise HTTPException(status_code=400, detail="Invalid finding ID format")
+
+    if not finding_id.startswith("R_") and not finding_id.startswith("O_"):
+        raise HTTPException(status_code=400, detail="Finding ID must start with R_ or O_")
+
+    finding = storage.get_finding_by_id(finding_id)
+
+    if not finding:
+        raise HTTPException(status_code=404, detail=f"Finding {finding_id} not found")
+
+    return {
+        "id": finding_id,
+        "mode": finding.get("mode", "risk" if finding_id.startswith("R_") else "opportunity"),
+        "username": finding.get("username"),
+        "strategy_id": finding.get("strategy_id"),
+        "strategy_asset": finding.get("strategy_asset", ""),
+        "headline": finding.get("headline", ""),
+        "rationale": finding.get("rationale", ""),
+        "flow_path": finding.get("flow_path", ""),
+        "evidence": finding.get("evidence", []),
+        "confidence": finding.get("confidence", ""),
+        "added_at": finding.get("added_at", ""),
+        "target_topic": finding.get("target_topic", ""),
     }

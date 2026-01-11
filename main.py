@@ -4,6 +4,8 @@ Handles file storage + proxies to Graph API for Neo4j/LLM
 """
 import os
 import json
+import html
+import re
 import logging
 import requests
 from datetime import datetime
@@ -124,6 +126,20 @@ class ContactFormRequest(BaseModel):
     email: str
     company: str
     message: str = ""
+    # Honeypot field - if filled, it's a bot (bots fill all fields)
+    website: str = ""  # Hidden field, should always be empty
+
+
+def sanitize_input(text: str, max_length: int = 1000) -> str:
+    """Sanitize user input to prevent XSS and injection attacks."""
+    if not text:
+        return ""
+    # Escape HTML entities
+    text = html.escape(text)
+    # Remove any potential script tags that slipped through
+    text = re.sub(r'<script.*?>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
+    # Truncate to max length
+    return text[:max_length].strip()
 
 class ChatRequest(BaseModel):
     message: str
@@ -713,12 +729,19 @@ def _save_contacts(contacts: list):
 def submit_contact(request: ContactFormRequest):
     """Save contact form submission to disk"""
     try:
+        # Honeypot check - if website field is filled, it's a bot
+        if request.website:
+            logger.warning(f"🤖 Bot detected (honeypot triggered): {request.email}")
+            # Return success to not tip off the bot, but don't save
+            return {"success": True, "message": "Thank you for reaching out!"}
+
+        # Sanitize all inputs
         contact = {
             "id": datetime.now().strftime("%Y%m%d%H%M%S"),
-            "name": request.name,
-            "email": request.email,
-            "company": request.company,
-            "message": request.message,
+            "name": sanitize_input(request.name, 100),
+            "email": sanitize_input(request.email, 200),
+            "company": sanitize_input(request.company, 200),
+            "message": sanitize_input(request.message, 2000),
             "submitted_at": datetime.now().isoformat(),
             "status": "new"
         }
@@ -727,7 +750,7 @@ def submit_contact(request: ContactFormRequest):
         contacts.append(contact)
         _save_contacts(contacts)
 
-        logger.info(f"📬 New contact: {request.name} ({request.email}) from {request.company}")
+        logger.info(f"📬 New contact: {contact['name']} ({contact['email']}) from {contact['company']}")
 
         # Send privacy-safe ntfy ping (no PII in notification)
         _send_ntfy_ping()

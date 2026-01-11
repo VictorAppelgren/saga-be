@@ -11,6 +11,7 @@ import os
 import requests
 
 from src.storage.article_manager import ArticleStorageManager
+from src.storage.strategy_manager import StrategyStorageManager
 from src.storage.worker_registry import get_worker_summary
 import logging
 
@@ -479,8 +480,26 @@ def get_admin_summary() -> Dict:
             "sections": events.get("agent_section_written", 0)
         },
         "strategy_analysis": {
+            # Backend trigger
             "triggered": events.get("strategy_analysis_triggered", 0),
-            "completed": events.get("strategy_analysis_completed", 0)
+            "trigger_failed": events.get("strategy_analysis_trigger_failed", 0),
+            # Graph API pipeline (new granular tracking)
+            "received": events.get("strategy_trigger_received", 0),
+            "step1_started": events.get("strategy_trigger_step1_started", 0),
+            "step1_completed": events.get("strategy_trigger_step1_completed", 0),
+            "step2_started": events.get("strategy_trigger_step2_started", 0),
+            "step2_completed": events.get("strategy_trigger_step2_completed", 0),
+            "step3_started": events.get("strategy_trigger_step3_started", 0),
+            "step3_completed": events.get("strategy_trigger_step3_completed", 0),
+            "completed": events.get("strategy_trigger_completed", 0),
+            "failed": events.get("strategy_trigger_failed", 0),
+            # write_all.py catch-all (new strategies)
+            "new_found": events.get("new_strategies_found", 0),
+            "new_started": events.get("new_strategy_analysis_started", 0),
+            "new_completed": events.get("new_strategy_analysis_completed", 0),
+            "new_failed": events.get("new_strategy_analysis_failed", 0),
+            # Legacy (keep for backwards compat)
+            "legacy_completed": events.get("strategy_analysis_completed", 0)
         },
         "exploration": {
             "started": events.get("exploration_started", 0),
@@ -498,13 +517,71 @@ def get_admin_summary() -> Dict:
         "engagement": {
             "sessions": events.get("user_session_started", 0),
             "strategies_created": events.get("strategy_created", 0),
+            "strategies_updated": events.get("strategy_updated", 0),
             "strategies_viewed": events.get("strategy_viewed", 0),
             "reports_viewed": events.get("report_viewed", 0),
             "section_rewrites": events.get("analysis_section_rewrite", 0)
         },
         "graph_state": graph_state,
-        "errors": events.get("error_occurred", 0)
+        "errors": events.get("error_occurred", 0),
+        # Real-time strategy health check
+        "strategy_health": _get_strategy_health()
     }
+
+
+def _get_strategy_health() -> Dict:
+    """
+    Get real-time strategy health metrics.
+
+    Checks for never-analyzed strategies (should be 0 if pipeline is healthy).
+    """
+    try:
+        storage = StrategyStorageManager()
+        users = storage.list_users()
+
+        never_analyzed = []
+        total_strategies = 0
+        now = datetime.now()
+
+        for username in users:
+            strategies = storage.list_strategies(username)
+            for s in strategies:
+                total_strategies += 1
+                # Check if strategy has never been analyzed
+                strategy = storage.get_strategy(username, s["id"])
+                if strategy and not strategy.get("latest_analysis"):
+                    # Calculate wait time
+                    created_at = strategy.get("created_at", "")
+                    wait_mins = 0
+                    if created_at:
+                        try:
+                            created = datetime.fromisoformat(created_at.replace("Z", "+00:00").replace("+00:00", ""))
+                            wait_mins = int((now - created).total_seconds() / 60)
+                        except:
+                            pass
+                    never_analyzed.append({
+                        "username": username,
+                        "strategy_id": s["id"],
+                        "asset": s.get("asset", "unknown"),
+                        "created_at": created_at,
+                        "wait_mins": wait_mins
+                    })
+
+        return {
+            "total_strategies": total_strategies,
+            "never_analyzed_count": len(never_analyzed),
+            "never_analyzed": never_analyzed[:10],  # Limit to first 10 for display
+            "healthy": len(never_analyzed) == 0
+        }
+    except Exception as e:
+        logger.error(f"Error getting strategy health: {e}")
+        return {
+            "total_strategies": 0,
+            "never_analyzed_count": -1,
+            "never_analyzed": [],
+            "healthy": False,
+            "error": str(e)
+        }
 
 
 def _get_graph_state() -> Dict:
