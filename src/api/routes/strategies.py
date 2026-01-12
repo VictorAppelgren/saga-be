@@ -62,6 +62,16 @@ def trigger_strategy_analysis(username: str, strategy_id: str):
         track_event("strategy_analysis_trigger_failed", f"{username}/{strategy_id}")
 
 
+# Valid stance values
+VALID_STANCES = {"bull", "bear", "neutral", None}
+
+# Valid position status values
+VALID_POSITION_STATUSES = {"monitoring", "looking_to_enter", "in_position", None}
+
+# Valid time horizons (swing trading to buy-and-hold, NO intraday)
+VALID_TIME_HORIZONS = {"weeks", "months", "quarters", None}
+
+
 # Models
 class StrategyListItem(BaseModel):
     id: str
@@ -71,6 +81,9 @@ class StrategyListItem(BaseModel):
     has_analysis: bool
     last_analyzed_at: Optional[str] = None
     is_default: bool = False
+    stance: Optional[str] = None  # bull, bear, neutral, or None
+    position_status: Optional[str] = None  # monitoring, looking_to_enter, in_position
+    time_horizon: Optional[str] = None  # weeks, months, quarters
 
 
 class StrategyResponse(BaseModel):
@@ -79,12 +92,26 @@ class StrategyResponse(BaseModel):
     updated_at: str
     version: int
     is_default: bool = False
+    stance: Optional[str] = None  # bull, bear, neutral, or None
+    position_status: Optional[str] = None  # monitoring, looking_to_enter, in_position
+    time_horizon: Optional[str] = None  # weeks, months, quarters
     asset: Dict[str, Any]
     user_input: Dict[str, str]
     latest_analysis: Optional[Dict[str, Any]] = None
     analysis_history: Optional[List[Dict[str, Any]]] = None
     dashboard_question: Optional[str] = None
     exploration_findings: Optional[Dict[str, Any]] = None
+
+
+class UpdateStanceRequest(BaseModel):
+    """Request body for updating stance"""
+    stance: Optional[str] = None  # bull, bear, neutral, or None
+
+
+class UpdatePositionStatusRequest(BaseModel):
+    """Request body for updating position status and time horizon"""
+    position_status: Optional[str] = None  # monitoring, looking_to_enter, in_position
+    time_horizon: Optional[str] = None  # weeks, months, quarters
 
 
 # Routes
@@ -401,6 +428,129 @@ def set_strategy_default(username: str, strategy_id: str, is_default: bool):
         "strategy_id": strategy_id,
         "is_default": is_default,
         "message": message
+    }
+
+
+@router.put("/users/{username}/strategies/{strategy_id}/stance")
+def update_strategy_stance(username: str, strategy_id: str, request: UpdateStanceRequest, background_tasks: BackgroundTasks):
+    """
+    Update strategy stance (directional view).
+
+    Stance values:
+    - "bull": User believes asset will go UP - system validates/invalidates bull thesis
+    - "bear": User believes asset will go DOWN - system validates/invalidates bear thesis
+    - "neutral": Monitoring/no view - system provides balanced analysis of both sides
+    - null: Not set (treated same as neutral for analysis)
+
+    Note: Changing stance triggers re-analysis as prompts are stance-aware.
+    """
+    existing = storage.get_strategy(username, strategy_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    # Validate stance value
+    if request.stance not in VALID_STANCES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid stance. Must be one of: 'bull', 'bear', 'neutral', or null"
+        )
+
+    # Check if user is admin (for default strategies)
+    user = user_manager.get_user(username)
+    is_admin = user and user.get("is_admin", False)
+
+    # PREVENT editing default strategies (unless admin)
+    if existing.get("is_default", False) and not is_admin:
+        raise HTTPException(status_code=403, detail="Cannot edit default strategies")
+
+    # Update stance
+    success = storage.update_stance(username, strategy_id, request.stance)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update stance")
+
+    # Track stance update
+    track_event("stance_updated", f"{username}/{strategy_id}:{request.stance}")
+
+    # Trigger re-analysis since stance affects how agents interpret the strategy
+    background_tasks.add_task(trigger_strategy_analysis, username, strategy_id)
+
+    return {
+        "success": True,
+        "strategy_id": strategy_id,
+        "stance": request.stance,
+        "message": f"Stance updated to '{request.stance or 'neutral'}'. Re-analysis triggered."
+    }
+
+
+@router.put("/users/{username}/strategies/{strategy_id}/position-status")
+def update_strategy_position_status(
+    username: str,
+    strategy_id: str,
+    request: UpdatePositionStatusRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Update strategy position status and time horizon.
+
+    Position Status (lifecycle stage):
+    - "monitoring": Watching the asset, no directional view yet
+    - "looking_to_enter": Have a thesis, seeking confirmation before entry
+    - "in_position": Currently holding, monitoring for thesis INVALIDATION
+    - null: Not set (treated as monitoring)
+
+    Time Horizon (swing trading to buy-and-hold - NO intraday):
+    - "weeks": 1-4 weeks (swing trade)
+    - "months": 1-6 months (position trade)
+    - "quarters": 6+ months (investment)
+    - null: Not specified
+
+    Note: Changing position status triggers re-analysis as prompts adapt to lifecycle.
+    """
+    existing = storage.get_strategy(username, strategy_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    # Validate position_status value
+    if request.position_status not in VALID_POSITION_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid position_status. Must be one of: 'monitoring', 'looking_to_enter', 'in_position', or null"
+        )
+
+    # Validate time_horizon value
+    if request.time_horizon not in VALID_TIME_HORIZONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid time_horizon. Must be one of: 'weeks', 'months', 'quarters', or null"
+        )
+
+    # Check if user is admin (for default strategies)
+    user = user_manager.get_user(username)
+    is_admin = user and user.get("is_admin", False)
+
+    # PREVENT editing default strategies (unless admin)
+    if existing.get("is_default", False) and not is_admin:
+        raise HTTPException(status_code=403, detail="Cannot edit default strategies")
+
+    # Update position status
+    success = storage.update_position_status(
+        username, strategy_id, request.position_status, request.time_horizon
+    )
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update position status")
+
+    # Track update
+    track_event("position_status_updated", f"{username}/{strategy_id}:{request.position_status}")
+
+    # Trigger re-analysis since position status affects how agents interpret the strategy
+    background_tasks.add_task(trigger_strategy_analysis, username, strategy_id)
+
+    return {
+        "success": True,
+        "strategy_id": strategy_id,
+        "position_status": request.position_status,
+        "time_horizon": request.time_horizon,
+        "message": f"Position status updated to '{request.position_status or 'monitoring'}'. Re-analysis triggered."
     }
 
 

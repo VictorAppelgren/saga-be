@@ -38,7 +38,10 @@ class StrategyStorageManager:
                         "updated_at": strategy["updated_at"],
                         "has_analysis": strategy.get("latest_analysis", {}).get("analyzed_at") is not None,
                         "last_analyzed_at": strategy.get("latest_analysis", {}).get("analyzed_at"),
-                        "is_default": strategy.get("is_default", False)
+                        "is_default": strategy.get("is_default", False),
+                        "stance": strategy.get("stance"),  # bull, bear, neutral, or None
+                        "position_status": strategy.get("position_status"),  # monitoring, looking_to_enter, in_position
+                        "time_horizon": strategy.get("time_horizon"),  # weeks, months, quarters, or None
                     })
             except Exception:
                 continue
@@ -243,21 +246,107 @@ class StrategyStorageManager:
         strategy_path = self.users_dir / username / f"{strategy_id}.json"
         if not strategy_path.exists():
             return False
-        
+
         with open(strategy_path, 'r') as f:
             strategy = json.load(f)
-        
+
         # Only allow updating specific fields
-        allowed_fields = ["asset", "user_input", "version"]
+        allowed_fields = ["asset", "user_input", "version", "stance", "position_status", "time_horizon"]
         for field in allowed_fields:
             if field in updates:
                 strategy[field] = updates[field]
-        
+
         strategy["updated_at"] = datetime.now().isoformat()
-        
+
         with open(strategy_path, 'w') as f:
             json.dump(strategy, f, indent=2)
-        
+
+        return True
+
+    def update_stance(self, username: str, strategy_id: str, stance: Optional[str]) -> bool:
+        """Update strategy stance (bull, bear, neutral, or None).
+
+        Args:
+            username: User who owns the strategy
+            strategy_id: Strategy ID
+            stance: "bull", "bear", "neutral", or None
+
+        Returns:
+            True if saved successfully
+        """
+        strategy_path = self.users_dir / username / f"{strategy_id}.json"
+        if not strategy_path.exists():
+            return False
+
+        # Validate stance value
+        valid_stances = {"bull", "bear", "neutral", None}
+        if stance not in valid_stances:
+            return False
+
+        with open(strategy_path, 'r') as f:
+            strategy = json.load(f)
+
+        strategy["stance"] = stance
+        strategy["updated_at"] = datetime.now().isoformat()
+
+        with open(strategy_path, 'w') as f:
+            json.dump(strategy, f, indent=2)
+
+        return True
+
+    def update_position_status(
+        self,
+        username: str,
+        strategy_id: str,
+        position_status: Optional[str],
+        time_horizon: Optional[str] = None
+    ) -> bool:
+        """Update strategy position status and optionally time horizon.
+
+        Position Lifecycle:
+        - monitoring: Watching the asset, no view yet
+        - looking_to_enter: Have a thesis, seeking confirmation to enter
+        - in_position: Currently holding, monitoring for thesis invalidation
+
+        Time Horizon (for swing trading to buy-and-hold):
+        - weeks: 1-4 weeks
+        - months: 1-6 months
+        - quarters: 6+ months / multi-quarter
+
+        Args:
+            username: User who owns the strategy
+            strategy_id: Strategy ID
+            position_status: "monitoring", "looking_to_enter", "in_position", or None
+            time_horizon: "weeks", "months", "quarters", or None
+
+        Returns:
+            True if saved successfully
+        """
+        strategy_path = self.users_dir / username / f"{strategy_id}.json"
+        if not strategy_path.exists():
+            return False
+
+        # Validate position_status value
+        valid_statuses = {"monitoring", "looking_to_enter", "in_position", None}
+        if position_status not in valid_statuses:
+            return False
+
+        # Validate time_horizon value
+        valid_horizons = {"weeks", "months", "quarters", None}
+        if time_horizon not in valid_horizons:
+            return False
+
+        with open(strategy_path, 'r') as f:
+            strategy = json.load(f)
+
+        strategy["position_status"] = position_status
+        if time_horizon is not None:
+            strategy["time_horizon"] = time_horizon
+        strategy["updated_at"] = datetime.now().isoformat()
+
+        with open(strategy_path, 'w') as f:
+            json.dump(strategy, f, indent=2)
+
         return True
     
     def delete_strategy(self, username: str, strategy_id: str) -> bool:
