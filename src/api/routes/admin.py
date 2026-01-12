@@ -550,6 +550,13 @@ def _get_strategy_health() -> Dict:
                 # Check if strategy has never been analyzed
                 strategy = storage.get_strategy(username, s["id"])
                 if strategy and not strategy.get("latest_analysis"):
+                    # Skip copied default strategies (is_default=True but user is not owner)
+                    # These are auto-copied to other users and don't need individual analysis
+                    is_default = strategy.get("is_default", False)
+                    owner = strategy.get("owner", username)
+                    if is_default and owner != username:
+                        continue  # This is a copy, skip it
+
                     # Calculate wait time
                     created_at = strategy.get("created_at", "")
                     wait_mins = 0
