@@ -735,6 +735,44 @@ def get_article_distribution() -> Dict:
 
 
 # ============================================================================
+# INPUT TRACKING ENDPOINTS
+# ============================================================================
+
+@router.get("/topic-relationship-distribution")
+def get_topic_relationship_distribution() -> Dict:
+    """
+    Get topic relationship distribution for understanding material size.
+
+    Returns:
+    - distribution buckets (0, 1-3, 4-6, 7-10, 10+ relationships)
+    - relationship counts by type (INFLUENCES, CORRELATES_WITH, etc.)
+    - top 10 most connected topics
+    """
+    try:
+        response = requests.get(f"{GRAPH_API_URL}/neo/topic-relationship-distribution", timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
+
+
+@router.get("/agent-input-stats")
+def get_agent_input_stats(days: int = Query(10, le=90)) -> Dict:
+    """
+    Get agent input tracking stats over time.
+
+    Shows how many times each agent was called with how many articles/tokens.
+    Use for optimizing material selection.
+    """
+    try:
+        response = requests.get(f"{GRAPH_API_URL}/neo/agent-input-stats?days={days}", timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
+
+
+# ============================================================================
 # WORKERS ENDPOINT
 # ============================================================================
 
