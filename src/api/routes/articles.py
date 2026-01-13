@@ -85,6 +85,55 @@ def list_article_ids(
     }
 
 
+@router.get("/by-url")
+def get_article_by_url(url: str = Query(..., description="Article URL to lookup")):
+    """
+    Find article by URL.
+
+    Uses the URL cache for fast O(1) lookup.
+    Useful for:
+    - Deduplication during ingestion
+    - Healing Neo4j references with mismatched IDs
+    - Checking if article already exists before fetching
+
+    Args:
+        url: The exact article URL to find
+
+    Returns:
+        {
+            "found": true/false,
+            "argos_id": "ABC123XYZ" or null,
+            "article": { full article data } or null
+        }
+
+    Example:
+        GET /api/articles/by-url?url=https://bloomberg.com/news/article-123
+    """
+    try:
+        # Use the fast URL cache lookup
+        article_id = storage.find_article_by_url(url)
+
+        if not article_id:
+            return {
+                "found": False,
+                "argos_id": None,
+                "article": None
+            }
+
+        # Found - get full article
+        article = storage.get_article(article_id)
+
+        return {
+            "found": True,
+            "argos_id": article_id,
+            "article": unwrap_article(article) if article else None
+        }
+
+    except Exception as e:
+        logger.error(f"URL lookup error: {e}")
+        raise HTTPException(status_code=500, detail=f"URL lookup error: {str(e)}")
+
+
 @router.get("/{article_id}")
 def get_article(article_id: str):
     """Get article by ID (unwrapped, flat structure)"""

@@ -795,6 +795,268 @@ def get_workers() -> Dict:
 
 
 # ============================================================================
+# MATERIAL BUILDER STATS ENDPOINT
+# ============================================================================
+
+@router.get("/stats/material")
+def get_material_builder_stats(days: int = Query(7, le=30)) -> Dict:
+    """
+    Get Material Builder stats - what goes into each analysis run.
+
+    Shows both totals and averages to understand typical input size:
+    - Topics requested vs found
+    - Articles by tier (tier3/2/1)
+    - Deduplication effectiveness
+    - Prioritization strategy breakdown
+    - Freshness metrics by timeframe
+    - Total chars and estimated tokens
+
+    Returns aggregated stats over the specified days.
+    """
+    runs = []
+
+    # Parse logs to extract material_run events
+    today = date.today()
+    for i in range(days):
+        target_date = today - timedelta(days=i)
+        date_str = target_date.isoformat()
+        log_file = LOGS_DIR / f"stats_{date_str}.log"
+
+        if not log_file.exists():
+            continue
+
+        with open(log_file) as f:
+            lines = f.readlines()
+
+        # Parse each material_run_completed line for summary stats
+        for line in lines:
+            if "material_run_completed" in line:
+                # Parse format: "HH:MM:SS | material_run_completed      | topics=N articles=N tier3=N tier2=N tier1=N chars=N tokens_est=N"
+                try:
+                    parts = line.split("|")
+                    if len(parts) >= 3:
+                        message = parts[2].strip()
+                        run_data = _parse_key_value_message(message)
+                        run_data["date"] = date_str
+                        run_data["time"] = parts[0].strip()
+                        runs.append(run_data)
+                except Exception:
+                    pass
+
+    # Calculate totals and averages
+    if not runs:
+        return {
+            "days": days,
+            "runs": 0,
+            "totals": {},
+            "averages": {},
+            "freshness": {},
+            "recent_runs": []
+        }
+
+    # Aggregate numeric fields
+    totals = {
+        "topics": sum(int(r.get("topics", 0)) for r in runs),
+        "articles": sum(int(r.get("articles", 0)) for r in runs),
+        "tier3": sum(int(r.get("tier3", 0)) for r in runs),
+        "tier2": sum(int(r.get("tier2", 0)) for r in runs),
+        "tier1": sum(int(r.get("tier1", 0)) for r in runs),
+        "chars": sum(int(r.get("chars", 0)) for r in runs),
+        "tokens_est": sum(int(r.get("tokens_est", 0)) for r in runs),
+    }
+
+    n = len(runs)
+    averages = {k: round(v / n, 1) for k, v in totals.items()}
+
+    # Get freshness stats from logs
+    freshness = _get_freshness_stats(days)
+
+    # Get healing stats from event counts
+    healing = _get_healing_stats(days)
+
+    return {
+        "days": days,
+        "runs": n,
+        "totals": totals,
+        "averages": averages,
+        "freshness": freshness,
+        "healing": healing,
+        "recent_runs": runs[:10]  # Last 10 runs for detail
+    }
+
+
+def _get_healing_stats(days: int) -> Dict:
+    """Get self-healing stats from event counters."""
+    today = date.today()
+    success = 0
+    failed = 0
+    deleted = 0
+
+    for i in range(days):
+        target_date = today - timedelta(days=i)
+        date_str = target_date.isoformat()
+        stats_file = STATS_DIR / f"stats_{date_str}.json"
+
+        if not stats_file.exists():
+            continue
+
+        data = json.loads(stats_file.read_text())
+        events = data.get("events", {})
+        success += events.get("material_heal_success", 0)
+        failed += events.get("material_heal_failed", 0)
+        deleted += events.get("material_heal_deleted", 0)
+
+    return {
+        "success": success,
+        "failed": failed,
+        "deleted": deleted,
+        "total_attempts": success + failed + deleted
+    }
+
+
+def _parse_key_value_message(message: str) -> Dict:
+    """Parse 'key=value key2=value2' format into dict."""
+    result = {}
+    parts = message.split()
+    for part in parts:
+        if "=" in part:
+            key, value = part.split("=", 1)
+            result[key] = value
+    return result
+
+
+def _get_freshness_stats(days: int) -> Dict:
+    """Parse freshness tracking events from logs."""
+    freshness = {
+        "current": {"avg_hours": [], "min_hours": [], "max_hours": [], "counts": []},
+        "medium": {"avg_days": [], "min_days": [], "max_days": [], "counts": []},
+        "fundamental": {"avg_days": [], "min_days": [], "max_days": [], "counts": []},
+    }
+
+    today = date.today()
+    for i in range(days):
+        target_date = today - timedelta(days=i)
+        date_str = target_date.isoformat()
+        log_file = LOGS_DIR / f"stats_{date_str}.log"
+
+        if not log_file.exists():
+            continue
+
+        with open(log_file) as f:
+            lines = f.readlines()
+
+        for line in lines:
+            if "material_run_freshness_current" in line:
+                data = _parse_freshness_line(line)
+                if data:
+                    freshness["current"]["avg_hours"].append(data.get("avg_hours", 0))
+                    freshness["current"]["min_hours"].append(data.get("min_hours", 0))
+                    freshness["current"]["max_hours"].append(data.get("max_hours", 0))
+                    freshness["current"]["counts"].append(data.get("count", 0))
+            elif "material_run_freshness_medium" in line:
+                data = _parse_freshness_line(line)
+                if data:
+                    freshness["medium"]["avg_days"].append(data.get("avg_days", 0))
+                    freshness["medium"]["min_days"].append(data.get("min_days", 0))
+                    freshness["medium"]["max_days"].append(data.get("max_days", 0))
+                    freshness["medium"]["counts"].append(data.get("count", 0))
+            elif "material_run_freshness_fundamental" in line:
+                data = _parse_freshness_line(line)
+                if data:
+                    freshness["fundamental"]["avg_days"].append(data.get("avg_days", 0))
+                    freshness["fundamental"]["min_days"].append(data.get("min_days", 0))
+                    freshness["fundamental"]["max_days"].append(data.get("max_days", 0))
+                    freshness["fundamental"]["counts"].append(data.get("count", 0))
+
+    # Calculate overall averages for each timeframe
+    result = {}
+    for tf, data in freshness.items():
+        if tf == "current":
+            unit = "hours"
+            avg_key = "avg_hours"
+        else:
+            unit = "days"
+            avg_key = "avg_days"
+
+        if data[avg_key]:
+            result[tf] = {
+                f"avg_{unit}": round(sum(data[avg_key]) / len(data[avg_key]), 1),
+                f"min_{unit}": round(min(data[f"min_{unit}"]), 1) if data[f"min_{unit}"] else 0,
+                f"max_{unit}": round(max(data[f"max_{unit}"]), 1) if data[f"max_{unit}"] else 0,
+                "samples": len(data[avg_key]),
+                "total_articles": sum(data["counts"]),
+            }
+
+    return result
+
+
+def _parse_freshness_line(line: str) -> Optional[Dict]:
+    """Parse freshness log line into numeric dict."""
+    try:
+        parts = line.split("|")
+        if len(parts) >= 3:
+            message = parts[2].strip()
+            data = _parse_key_value_message(message)
+            # Convert string values to float
+            return {k: float(v) for k, v in data.items()}
+    except Exception:
+        return None
+    return None
+
+
+@router.get("/trends/material")
+def get_material_trend(days: int = Query(10, le=90)) -> Dict:
+    """
+    Get Material Builder trends over time for charting.
+
+    Returns daily aggregates for visualization.
+    """
+    dates = []
+    runs_per_day = []
+    articles_per_day = []
+    chars_per_day = []
+
+    today = date.today()
+    for i in range(days):
+        target_date = today - timedelta(days=i)
+        date_str = target_date.isoformat()
+        dates.insert(0, date_str)
+
+        log_file = LOGS_DIR / f"stats_{date_str}.log"
+
+        if not log_file.exists():
+            runs_per_day.insert(0, 0)
+            articles_per_day.insert(0, 0)
+            chars_per_day.insert(0, 0)
+            continue
+
+        with open(log_file) as f:
+            lines = f.readlines()
+
+        day_runs = 0
+        day_articles = 0
+        day_chars = 0
+
+        for line in lines:
+            if "material_run_completed" in line:
+                day_runs += 1
+                data = _parse_key_value_message(line.split("|")[2].strip() if "|" in line else "")
+                day_articles += int(data.get("articles", 0))
+                day_chars += int(data.get("chars", 0))
+
+        runs_per_day.insert(0, day_runs)
+        articles_per_day.insert(0, day_articles)
+        chars_per_day.insert(0, day_chars)
+
+    return {
+        "dates": dates,
+        "runs": runs_per_day,
+        "articles": articles_per_day,
+        "chars": chars_per_day
+    }
+
+
+# ============================================================================
 # DEBUG ENDPOINTS
 # ============================================================================
 
