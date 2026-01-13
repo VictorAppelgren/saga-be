@@ -5,7 +5,7 @@ Reads directly from new stats files + queries Neo4j for graph state
 from fastapi import APIRouter, HTTPException, Query
 from pathlib import Path
 from datetime import datetime, date, timedelta
-from typing import Dict, List
+from typing import Dict, List, Optional
 import json
 import os
 import requests
