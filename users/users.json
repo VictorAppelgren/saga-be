@@ -1,98 +1,13 @@
 {
-  "users": [
-    {
-      "username": "Victor",
-      "password": "v123",
-      "is_admin": true,
-      "accessible_topics": [
-        "brent",
-        "eurusd",
-        "dxy",
-        "copper",
-        "fed_policy",
-        "ecb_policy",
-        "euribor"
-      ]
-    },
-    {
-      "username": "Maod",
-      "password": "maod123",
-      "is_admin": true,
-      "accessible_topics": [
-        "brent",
-        "eurusd",
-        "dxy",
-        "copper",
-        "fed_policy",
-        "ecb_policy",
-        "euribor"
-      ]
-    },
-    {
-      "username": "William", 
-      "password": "w456",
-      "is_admin": false,
-      "accessible_topics": [
-        "brent",
-        "eurusd",
-        "dxy",
-        "copper",
-        "fed_policy",
-        "ecb_policy",
-        "euribor"
-      ]
-    },
-    {
-      "username": "Charlotte",
-      "password": "c789",
-      "is_admin": false,
-      "accessible_topics": [
-        "brent",
-        "eurusd",
-        "dxy",
-        "copper",
-        "fed_policy",
-        "ecb_policy",
-        "euribor"
-      ]
-    },
-    {
-      "username": "Claes",
-      "password": "cl123",
-      "is_admin": false,
-      "accessible_topics": [
-        "brent",
-        "eurusd",
-        "dxy",
-        "copper",
-        "fed_policy",
-        "ecb_policy",
-        "euribor"
-      ]
-    },
-    {
-      "username": "Simon",
-      "password": "s234",
-      "is_admin": false,
-      "accessible_topics": [
-        "brent",
-        "eurusd",
-        "dxy",
-        "copper",
-        "fed_policy",
-        "ecb_policy",
-        "euribor"
-      ]
-    },
-    {
-      "username": "Fredrik",
-      "password": "f345",
-      "is_admin": false,
-      "accessible_topics": [
-        "brent",
-        "eurusd",
-        "fed_policy"
-      ]
-    }
-  ]
+  "users": {
+    "users": [
+      "Charlotte",
+      "Claes",
+      "Fredrik",
+      "Maod",
+      "Simon",
+      "Victor",
+      "William"
+    ]
+  }
 }
