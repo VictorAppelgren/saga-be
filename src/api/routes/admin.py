@@ -463,6 +463,35 @@ def get_admin_summary() -> Dict:
             "rejected_capacity": events.get("article_rejected_capacity", 0),
             "duplicates_skipped": events.get("article_duplicate_skipped", 0)
         },
+        "article_lifecycle": {
+            "backend_stored": events.get("article_backend_stored", 0),
+            "neo4j_created": events.get("article_neo4j_created", 0),
+            "neo4j_deleted": events.get("article_neo4j_deleted", 0),
+            "about_links_created": events.get("about_link_created", 0),
+        },
+        "self_healing": {
+            "attempted": events.get("material_heal_attempted", 0),
+            "success": events.get("material_heal_success", 0),
+            "failed": events.get("material_heal_failed", 0),
+            "deleted": events.get("material_heal_deleted", 0),
+            "skipped_perigon": events.get("material_heal_skipped_perigon", 0),
+        },
+        "relationship_discovery": {
+            "run": events.get("relationship_discovery_run", 0),
+            "throttled": events.get("relationship_discovery_throttled", 0),
+            "failed": events.get("relationship_discovery_failed", 0),
+        },
+        "backend_errors": {
+            "ingest": events.get("backend_error_ingest", 0),
+            "get": events.get("backend_error_get", 0),
+            "search": events.get("backend_error_search", 0),
+            "stats": events.get("backend_error_stats", 0),
+            "users": events.get("backend_error_users", 0),
+            "strategy": events.get("backend_error_strategy", 0),
+            "analysis": events.get("backend_error_analysis", 0),
+            "dashboard": events.get("backend_error_dashboard", 0),
+            "findings": events.get("backend_error_findings", 0),
+        },
         "topics": {
             "suggested": events.get("topic_suggested", 0),
             "created": events.get("topic_created", 0),
@@ -477,7 +506,9 @@ def get_admin_summary() -> Dict:
             "completed": events.get("agent_analysis_completed", 0),
             "skipped_no_new": events.get("analysis.skipped.no_new_articles", 0),
             "skipped_cooldown": events.get("analysis.skipped.cooldown", 0),
-            "sections": events.get("agent_section_written", 0)
+            "skipped_no_articles": events.get("agent_section_skipped_no_articles", 0),
+            "sections_written": events.get("agent_section_written", 0),
+            "sections_failed": events.get("analysis_section_failed", 0),
         },
         "strategy_analysis": {
             # Backend trigger
