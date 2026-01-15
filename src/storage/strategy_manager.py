@@ -10,7 +10,11 @@ from datetime import datetime
 
 class StrategyStorageManager:
     """Manages file-based strategy storage in users/"""
-    
+
+    # Admin account that owns default strategies
+    # Default strategies are loaded for ALL users, not copied
+    DEFAULT_STRATEGY_OWNER = "Victor"
+
     def __init__(self, users_dir: str = "users"):
         self.users_dir = Path(users_dir)
     
@@ -21,50 +25,115 @@ class StrategyStorageManager:
         return sorted([d.name for d in self.users_dir.iterdir() if d.is_dir() and not d.name.startswith('.')])
     
     def list_strategies(self, username: str) -> List[Dict]:
-        """List all strategies for a user"""
-        user_dir = self.users_dir / username
-        if not user_dir.exists():
-            return []
-        
+        """List all strategies for a user.
+
+        Returns:
+        - User's OWN strategies (files in their folder)
+        - PLUS default strategies from admin (loaded, not copied)
+
+        Default strategies are marked with is_shared_default=True so the UI
+        can show them differently (e.g., "Examples" section with "Shared" badge).
+        """
         strategies = []
-        for file_path in user_dir.glob("strategy_*.json"):
+
+        # 1. Load user's OWN strategies
+        user_dir = self.users_dir / username
+        if user_dir.exists():
+            for file_path in user_dir.glob("strategy_*.json"):
+                strategy_summary = self._load_strategy_summary(file_path)
+                if strategy_summary:
+                    strategies.append(strategy_summary)
+
+        # 2. Load DEFAULT strategies from admin (if user is not admin)
+        if username != self.DEFAULT_STRATEGY_OWNER:
+            default_strategies = self._get_default_strategies()
+            for default in default_strategies:
+                # Mark as shared default (UI can show in "Examples" section)
+                default["is_shared_default"] = True
+                default["owner_username"] = self.DEFAULT_STRATEGY_OWNER
+                strategies.append(default)
+
+        return sorted(strategies, key=lambda x: x["updated_at"], reverse=True)
+
+    def _load_strategy_summary(self, file_path: Path) -> Optional[Dict]:
+        """Load strategy summary from file."""
+        try:
+            with open(file_path, 'r') as f:
+                strategy = json.load(f)
+                return {
+                    "id": strategy["id"],
+                    "asset": strategy["asset"]["primary"],
+                    "target": strategy["user_input"]["target"],
+                    "updated_at": strategy["updated_at"],
+                    "has_analysis": strategy.get("latest_analysis", {}).get("analyzed_at") is not None,
+                    "last_analyzed_at": strategy.get("latest_analysis", {}).get("analyzed_at"),
+                    "is_default": strategy.get("is_default", False),
+                    "is_shared_default": False,  # Will be overridden for defaults
+                    "stance": strategy.get("stance"),
+                    "position_status": strategy.get("position_status"),
+                    "time_horizon": strategy.get("time_horizon"),
+                }
+        except Exception:
+            return None
+
+    def _get_default_strategies(self) -> List[Dict]:
+        """Get all default strategies from admin account."""
+        admin_dir = self.users_dir / self.DEFAULT_STRATEGY_OWNER
+        if not admin_dir.exists():
+            return []
+
+        defaults = []
+        for file_path in admin_dir.glob("strategy_*.json"):
             try:
                 with open(file_path, 'r') as f:
                     strategy = json.load(f)
-                    strategies.append({
-                        "id": strategy["id"],
-                        "asset": strategy["asset"]["primary"],
-                        "target": strategy["user_input"]["target"],
-                        "updated_at": strategy["updated_at"],
-                        "has_analysis": strategy.get("latest_analysis", {}).get("analyzed_at") is not None,
-                        "last_analyzed_at": strategy.get("latest_analysis", {}).get("analyzed_at"),
-                        "is_default": strategy.get("is_default", False),
-                        "stance": strategy.get("stance"),  # bull, bear, neutral, or None
-                        "position_status": strategy.get("position_status"),  # monitoring, looking_to_enter, in_position
-                        "time_horizon": strategy.get("time_horizon"),  # weeks, months, quarters, or None
-                    })
+                    if strategy.get("is_default", False):
+                        defaults.append(self._load_strategy_summary(file_path))
             except Exception:
                 continue
-        
-        return sorted(strategies, key=lambda x: x["updated_at"], reverse=True)
+
+        return [d for d in defaults if d is not None]
     
     def get_strategy(self, username: str, strategy_id: str) -> Optional[Dict]:
-        """Load full strategy"""
+        """Load full strategy.
+
+        First checks user's folder, then falls back to admin's defaults.
+        This allows users to see shared defaults without having copies.
+        """
+        # 1. Check user's own folder first
         strategy_path = self.users_dir / username / f"{strategy_id}.json"
-        if not strategy_path.exists():
-            return None
-        with open(strategy_path, 'r') as f:
-            return json.load(f)
+        if strategy_path.exists():
+            with open(strategy_path, 'r') as f:
+                return json.load(f)
+
+        # 2. If not found and user is not admin, check admin's defaults
+        if username != self.DEFAULT_STRATEGY_OWNER:
+            admin_path = self.users_dir / self.DEFAULT_STRATEGY_OWNER / f"{strategy_id}.json"
+            if admin_path.exists():
+                with open(admin_path, 'r') as f:
+                    strategy = json.load(f)
+                    # Only return if it's a default strategy
+                    if strategy.get("is_default", False):
+                        # Mark it as shared so callers know
+                        strategy["is_shared_default"] = True
+                        strategy["owner_username"] = self.DEFAULT_STRATEGY_OWNER
+                        return strategy
+
+        return None
     
     def save_strategy(self, username: str, strategy: Dict) -> str:
-        """Save strategy (archives old version). If is_default=True, copies to all users."""
+        """Save strategy (archives old version).
+
+        Note: Default strategies are NO LONGER copied to all users.
+        Instead, they are loaded dynamically via list_strategies() and get_strategy().
+        """
         user_dir = self.users_dir / username
         archive_dir = user_dir / "archive"
         os.makedirs(archive_dir, exist_ok=True)
-        
+
         strategy_id = strategy["id"]
         strategy_path = user_dir / f"{strategy_id}.json"
-        
+
         # Archive existing
         if strategy_path.exists():
             with open(strategy_path, 'r') as f:
@@ -73,27 +142,11 @@ class StrategyStorageManager:
             archive_path = archive_dir / f"{strategy_id}_{timestamp}.json"
             with open(archive_path, 'w') as f:
                 json.dump(old_strategy, f, indent=2)
-        
+
         # Save new
         with open(strategy_path, 'w') as f:
             json.dump(strategy, f, indent=2)
-        
-        # If this is a default strategy, copy to all other users
-        if strategy.get("is_default", False):
-            all_users = self.list_users()
-            for other_user in all_users:
-                if other_user != username:
-                    other_user_dir = self.users_dir / other_user
-                    other_user_dir.mkdir(parents=True, exist_ok=True)
-                    other_strategy_path = other_user_dir / f"{strategy_id}.json"
-                    
-                    # Copy the strategy
-                    strategy_copy = strategy.copy()
-                    strategy_copy["updated_at"] = datetime.now().isoformat()
-                    
-                    with open(other_strategy_path, 'w') as f:
-                        json.dump(strategy_copy, f, indent=2)
-        
+
         return strategy_id
     
     def save_topics(self, username: str, strategy_id: str, topics: Dict) -> bool:
@@ -122,53 +175,34 @@ class StrategyStorageManager:
         return strategy.get("topics") if strategy else None
     
     def save_analysis(self, username: str, strategy_id: str, analysis: Dict) -> bool:
-        """Save analysis results (updates latest + appends to history)"""
+        """Save analysis results (updates latest + appends to history).
+
+        Note: Analysis is saved ONLY to the owner's copy. Other users see
+        the analysis via get_strategy() which loads from admin for defaults.
+        No more copying analysis to all users.
+        """
         strategy_path = self.users_dir / username / f"{strategy_id}.json"
         if not strategy_path.exists():
             return False
-        
+
         with open(strategy_path, 'r') as f:
             strategy = json.load(f)
-        
+
         # Add timestamp
         analysis["analyzed_at"] = datetime.now().isoformat()
-        
+
         # Update latest
         strategy["latest_analysis"] = analysis
-        
+
         # Append to history
         if "analysis_history" not in strategy:
             strategy["analysis_history"] = []
         strategy["analysis_history"].append(analysis)
-        
+
         strategy["updated_at"] = datetime.now().isoformat()
-        
+
         with open(strategy_path, 'w') as f:
             json.dump(strategy, f, indent=2)
-        
-        # If this is an owner copy of a default strategy, propagate analysis to all other users' copies
-        if strategy.get("is_default", False) and strategy.get("owner_username") == username:
-            all_users = self.list_users()
-            for other_user in all_users:
-                if other_user == username:
-                    continue
-                other_path = self.users_dir / other_user / f"{strategy_id}.json"
-                if not other_path.exists():
-                    continue
-                try:
-                    with open(other_path, 'r') as f:
-                        other_strategy = json.load(f)
-                except Exception:
-                    continue
-
-                other_strategy["latest_analysis"] = analysis
-                if "analysis_history" not in other_strategy:
-                    other_strategy["analysis_history"] = []
-                other_strategy["analysis_history"].append(analysis)
-                other_strategy["updated_at"] = strategy["updated_at"]
-
-                with open(other_path, 'w') as f:
-                    json.dump(other_strategy, f, indent=2)
 
         return True
     

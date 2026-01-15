@@ -565,6 +565,9 @@ def _get_strategy_health() -> Dict:
     Get real-time strategy health metrics.
 
     Checks for never-analyzed strategies (should be 0 if pipeline is healthy).
+
+    Note: Shared default strategies (is_shared_default=True) are loaded from admin
+    and should not be counted per-user. We only check owned strategies.
     """
     try:
         storage = StrategyStorageManager()
@@ -572,22 +575,23 @@ def _get_strategy_health() -> Dict:
 
         never_analyzed = []
         total_strategies = 0
+        total_shared_defaults = 0
         now = datetime.now()
 
         for username in users:
             strategies = storage.list_strategies(username)
             for s in strategies:
+                # Skip shared defaults - they're loaded from admin, not owned by user
+                # Analysis state comes from admin's copy, not per-user
+                if s.get("is_shared_default"):
+                    total_shared_defaults += 1
+                    continue
+
                 total_strategies += 1
+
                 # Check if strategy has never been analyzed
                 strategy = storage.get_strategy(username, s["id"])
                 if strategy and not strategy.get("latest_analysis"):
-                    # Skip copied default strategies (is_default=True but user is not owner)
-                    # These are auto-copied to other users and don't need individual analysis
-                    is_default = strategy.get("is_default", False)
-                    owner = strategy.get("owner", username)
-                    if is_default and owner != username:
-                        continue  # This is a copy, skip it
-
                     # Calculate wait time
                     created_at = strategy.get("created_at", "")
                     wait_mins = 0
@@ -607,6 +611,7 @@ def _get_strategy_health() -> Dict:
 
         return {
             "total_strategies": total_strategies,
+            "total_shared_defaults": total_shared_defaults,
             "never_analyzed_count": len(never_analyzed),
             "never_analyzed": never_analyzed[:10],  # Limit to first 10 for display
             "healthy": len(never_analyzed) == 0
@@ -615,6 +620,7 @@ def _get_strategy_health() -> Dict:
         logger.error(f"Error getting strategy health: {e}")
         return {
             "total_strategies": 0,
+            "total_shared_defaults": 0,
             "never_analyzed_count": -1,
             "never_analyzed": [],
             "healthy": False,
@@ -766,6 +772,31 @@ def get_article_distribution() -> Dict:
     """
     try:
         response = requests.get(f"{GRAPH_API_URL}/neo/article-distribution", timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
+
+
+@router.get("/article-distribution-by-tier")
+def get_article_distribution_by_tier() -> Dict:
+    """
+    Get FULL article distribution by timeframe × perspective × tier from Neo4j.
+
+    This endpoint is critical for diagnosing capacity management issues.
+
+    Expected limits (from config.py):
+    - Per timeframe × perspective × tier: 4 (tier 3), 3 (tier 2), 3 (tier 1)
+    - Per timeframe × perspective TOTAL: 10 articles max
+    - Per topic TOTAL: 120 articles max
+
+    Returns:
+    - Full breakdown by topic × timeframe × perspective × tier
+    - Violations where counts exceed limits
+    - Summary statistics
+    """
+    try:
+        response = requests.get(f"{GRAPH_API_URL}/neo/article-distribution-by-tier", timeout=60)
         response.raise_for_status()
         return response.json()
     except Exception as e:
