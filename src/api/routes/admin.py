@@ -556,7 +556,9 @@ def get_admin_summary() -> Dict:
         "graph_state": graph_state,
         "errors": events.get("error_occurred", 0),
         # Real-time strategy health check
-        "strategy_health": _get_strategy_health()
+        "strategy_health": _get_strategy_health(),
+        # Topic analysis freshness overview
+        "topic_analysis_freshness": _get_topic_analysis_freshness()
     }
 
 
@@ -626,6 +628,24 @@ def _get_strategy_health() -> Dict:
             "healthy": False,
             "error": str(e)
         }
+
+
+def _get_topic_analysis_freshness() -> Dict:
+    """
+    Get topic analysis freshness metrics from Graph API.
+    Used in summary endpoint for dashboard overview.
+    """
+    url = f"{GRAPH_API_URL}/neo/topic-analysis-freshness"
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(f"[ANALYSIS_FRESHNESS] Non-200 response: {response.status_code}")
+            return {"error": "Failed to fetch", "summary": {}, "freshness": {}, "distribution": {}}
+    except Exception as e:
+        logger.error(f"[ANALYSIS_FRESHNESS] Error: {e}")
+        return {"error": str(e), "summary": {}, "freshness": {}, "distribution": {}}
 
 
 def _get_graph_state() -> Dict:
@@ -835,6 +855,27 @@ def get_agent_input_stats(days: int = Query(10, le=90)) -> Dict:
     """
     try:
         response = requests.get(f"{GRAPH_API_URL}/neo/agent-input-stats?days={days}", timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Graph API error: {str(e)}")
+
+
+@router.get("/topic-analysis-freshness")
+def get_topic_analysis_freshness() -> Dict:
+    """
+    Get topic analysis freshness metrics.
+
+    Shows:
+    - How many topics have analysis vs don't
+    - Average time since last analysis
+    - Distribution of analysis ages (fresh, recent, stale)
+    - Topics needing attention (never analyzed or stale)
+
+    Used to monitor if the analysis pipeline is keeping up.
+    """
+    try:
+        response = requests.get(f"{GRAPH_API_URL}/neo/topic-analysis-freshness", timeout=30)
         response.raise_for_status()
         return response.json()
     except Exception as e:
