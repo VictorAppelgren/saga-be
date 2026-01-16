@@ -555,7 +555,7 @@ Type: {context_type}
         # 8. Agentic loop
         if not ANTHROPIC_API_KEY:
             raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
-        llm = ChatAnthropic(model="claude-sonnet-4-5-20250929", temperature=0.7, api_key=ANTHROPIC_API_KEY)
+        llm = ChatAnthropic(model="claude-sonnet-4-5-latest", temperature=0.7, api_key=ANTHROPIC_API_KEY)
         search_results = []
 
         for _ in range(5):  # Max iterations
