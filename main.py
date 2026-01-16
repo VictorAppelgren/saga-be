@@ -34,7 +34,7 @@ from src.storage.session_manager import session_manager
 from src.models.conversation import Message, MessageRole
 
 # Import API routers
-from src.api.routes import articles, admin, strategies, stats
+from src.api.routes import articles, admin, strategies, stats, positions
 
 # Import stats tracking (same as stats router but as a sync helper)
 from datetime import date as date_helper
@@ -109,6 +109,7 @@ app.include_router(articles.router)
 app.include_router(admin.router)
 app.include_router(strategies.router)
 app.include_router(stats.router)
+app.include_router(positions.router)
 
 # Startup: Ensure all users have directories
 @app.on_event("startup")

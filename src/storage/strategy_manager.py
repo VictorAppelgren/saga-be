@@ -550,3 +550,114 @@ class StrategyStorageManager:
                     continue
 
         return None
+
+    # =========================================================================
+    # SIGNAL METHODS (AI-suggested position actions)
+    # =========================================================================
+
+    def save_signal(self, username: str, strategy_id: str, signal: Dict) -> bool:
+        """Save AI-suggested position signal to strategy.
+
+        Args:
+            username: User who owns the strategy
+            strategy_id: Strategy ID
+            signal: Dict with keys:
+                - status: "enter" | "exit" | "hold"
+                - confidence: "high" | "medium" | "low"
+                - reasoning: str
+                - key_factors: List[str]
+                - detected_at: ISO timestamp
+                - market_price_at_detection: str or None
+
+        Returns:
+            True if saved successfully
+        """
+        strategy_path = self.users_dir / username / f"{strategy_id}.json"
+        if not strategy_path.exists():
+            return False
+
+        with open(strategy_path, 'r') as f:
+            strategy = json.load(f)
+
+        strategy["suggested_position"] = signal
+        strategy["updated_at"] = datetime.now().isoformat()
+
+        with open(strategy_path, 'w') as f:
+            json.dump(strategy, f, indent=2)
+
+        return True
+
+    def get_signal(self, username: str, strategy_id: str) -> Optional[Dict]:
+        """Get current AI signal for strategy."""
+        strategy = self.get_strategy(username, strategy_id)
+        return strategy.get("suggested_position") if strategy else None
+
+    def get_all_active_signals(self, username: str) -> List[Dict]:
+        """Get all strategies with actionable signals for a user.
+
+        A signal is "active" if:
+        - suggested_status is "enter" and position_status is not "in_position"
+        - suggested_status is "exit" and position_status is "in_position"
+
+        Returns:
+            List of dicts with strategy_id, asset, signal, current_status
+        """
+        strategies = self.list_strategies(username)
+        active_signals = []
+
+        for s in strategies:
+            strategy = self.get_strategy(username, s["id"])
+            if not strategy:
+                continue
+
+            signal = strategy.get("suggested_position")
+            current_status = strategy.get("position_status")
+
+            if not signal or not signal.get("status"):
+                continue
+
+            suggested = signal["status"]
+
+            # Check if signal is actionable
+            is_actionable = False
+            if suggested == "enter" and current_status != "in_position":
+                is_actionable = True
+            elif suggested == "exit" and current_status == "in_position":
+                is_actionable = True
+
+            if is_actionable:
+                active_signals.append({
+                    "strategy_id": s["id"],
+                    "asset": s["asset"],
+                    "signal": signal,
+                    "current_status": current_status,
+                    "stance": strategy.get("stance"),
+                })
+
+        return active_signals
+
+    def set_active_position(self, username: str, strategy_id: str, position_id: Optional[str]) -> bool:
+        """Link or unlink a position to a strategy.
+
+        Args:
+            username: User who owns the strategy
+            strategy_id: Strategy ID
+            position_id: Position ID to link, or None to unlink
+
+        Returns:
+            True if saved successfully
+        """
+        strategy_path = self.users_dir / username / f"{strategy_id}.json"
+        if not strategy_path.exists():
+            return False
+
+        with open(strategy_path, 'r') as f:
+            strategy = json.load(f)
+
+        strategy["active_position_id"] = position_id
+        strategy["updated_at"] = datetime.now().isoformat()
+
+        with open(strategy_path, 'w') as f:
+            json.dump(strategy, f, indent=2)
+
+        return True

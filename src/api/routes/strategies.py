@@ -591,3 +591,89 @@ def get_finding_by_id(finding_id: str):
         "added_at": finding.get("added_at", ""),
         "target_topic": finding.get("target_topic", ""),
     }
+
+
+# ============ SIGNALS (AI-suggested position actions) ============
+
+class SignalRequest(BaseModel):
+    """Request body for saving a signal"""
+    status: str  # "enter", "exit", "hold"
+    confidence: Optional[str] = None  # "high", "medium", "low"
+    reasoning: Optional[str] = None
+    key_factors: Optional[List[str]] = None
+    detected_at: Optional[str] = None
+    market_price_at_detection: Optional[str] = None
+
+
+@router.post("/users/{username}/strategies/{strategy_id}/signal")
+def save_strategy_signal(username: str, strategy_id: str, signal: SignalRequest):
+    """
+    Save AI-suggested position signal to strategy.
+
+    Signal values:
+    - status: "enter" (suggest opening position), "exit" (suggest closing), "hold" (no action)
+    - confidence: "high", "medium", "low"
+    - reasoning: Why this signal was generated
+    - key_factors: List of supporting factors
+    - detected_at: ISO timestamp when signal was generated
+    - market_price_at_detection: Price at time of signal
+
+    Called by strategy analysis pipeline after completing analysis.
+    """
+    existing = storage.get_strategy(username, strategy_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    # Validate signal status
+    if signal.status not in {"enter", "exit", "hold"}:
+        raise HTTPException(status_code=400, detail="Signal status must be 'enter', 'exit', or 'hold'")
+
+    signal_dict = {
+        "status": signal.status,
+        "confidence": signal.confidence,
+        "reasoning": signal.reasoning,
+        "key_factors": signal.key_factors or [],
+        "detected_at": signal.detected_at,
+        "market_price_at_detection": signal.market_price_at_detection,
+    }
+
+    success = storage.save_signal(username, strategy_id, signal_dict)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to save signal")
+
+    track_event("signal_saved", f"{username}/{strategy_id}:{signal.status}")
+
+    return {"success": True, "signal": signal_dict}
+
+
+@router.get("/users/{username}/strategies/{strategy_id}/signal")
+def get_strategy_signal(username: str, strategy_id: str):
+    """
+    Get current AI signal for strategy.
+
+    Returns the latest suggested_position signal, or null if none exists.
+    """
+    strategy = storage.get_strategy(username, strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    signal = strategy.get("suggested_position")
+    return {"signal": signal}
+
+
+@router.get("/users/{username}/active-signals")
+def get_active_signals(username: str):
+    """
+    Get all strategies with actionable signals for a user.
+
+    A signal is "active/actionable" if:
+    - suggested_status is "enter" AND current position_status is NOT "in_position"
+    - suggested_status is "exit" AND current position_status IS "in_position"
+
+    Used by the positions page to show pending entry/exit suggestions.
+    """
+    active_signals = storage.get_all_active_signals(username)
+    return {
+        "active_signals": active_signals,
+        "count": len(active_signals)
+    }
