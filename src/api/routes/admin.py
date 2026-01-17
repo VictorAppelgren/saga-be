@@ -537,6 +537,25 @@ def get_admin_summary() -> Dict:
             "accepted": events.get("exploration_accepted", 0),
             "rejected": events.get("exploration_rejected", 0)
         },
+        "signals": {
+            "total_generated": events.get("signal_generated", 0),
+            "enter": events.get("signal_enter", 0),
+            "exit": events.get("signal_exit", 0),
+            "hold": events.get("signal_hold", 0),
+            "confidence_high": events.get("signal_confidence_high", 0),
+            "confidence_medium": events.get("signal_confidence_medium", 0),
+            "confidence_low": events.get("signal_confidence_low", 0),
+        },
+        "scheduled_runs": {
+            "morning_started": events.get("daily_strategy_run_6am_started", 0),
+            "morning_completed": events.get("daily_strategy_run_6am_completed", 0),
+            "afternoon_started": events.get("daily_strategy_run_2pm_started", 0),
+            "afternoon_completed": events.get("daily_strategy_run_2pm_completed", 0),
+        },
+        "strategy_skips": {
+            "no_topic_updates": events.get("strategy_skipped_no_topic_updates", 0),
+            "strategy_not_found": events.get("strategy_skipped_strategy_not_found", 0),
+        },
         "llm_calls": {
             # Tier totals (llm_simple, llm_medium, llm_complex, llm_fast)
             "tiers": {k.replace("llm_", ""): v for k, v in events.items()
